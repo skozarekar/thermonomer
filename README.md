@@ -1,2 +1,2 @@
-# thermo-nomer
+# thermonomer
 Repo for polymer thermo ML
