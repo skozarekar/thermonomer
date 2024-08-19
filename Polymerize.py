@@ -7,42 +7,32 @@ import re
 class Polymerization:
     '''
         class Polymerization: 
-            A class that polymerizes monomers in a dataset up to degree of polymerization chosen by user. Data is
-            saved in a new .csv file to which solvent data is added as well. Types of polymerizations available here: ROP (covers O, N, S), 
+            A class that polymerizes a monomer up to degree of polymerization chosen by user. Types of polymerizations available here: ROP (covers O, N, S), 
             ROMP, vinyl, ionic, cationic, cyclic
 
         Parameters for initiation: 
-            path (str): the directory path to the directory that contains all of the user's datasets (ie. ends in /0_data_sets/)
+            monomer_smiles (str): smiles string of the monomer
+            poly_type (str): the type of polymerization that the monomer undergoes
             dp (int): degree of polymerization. The amount of times the user wants the molecule to be polymerized
 
         Output:
-            creates a new csv file containing polymer and solvent data (ie. titled "2a_polymerized_with_solvents.csv")
+            (dictionary): a dictionary with keys being dp and values being the smile string of the polymer
     '''
 
-    def __init__(self, path, degree_of_polymerization):
-        '''
-            NOTE: Make sure the datasets are named corectly before you run. 
-
-        '''
-        # Define dataset paths
-        self.infile_path = path + "1e_unfeaturized_data_clean.csv"
-        self.solvent_path = path + "2_solvents.csv"
-        self.final_path = path + "2a_polymerized_with_solvents.csv"
+    def __init__(self, monomer_smiles, poly_type,dp):
 
         # This path will be used to fill in values that were done manually such as monomers that fall under base_state 'misc'
-        self.archive_path = path + "2_archive_static.csv"
-
-        self.degree_of_polymerization = degree_of_polymerization
-        self.df = pd.read_csv(self.infile_path, index_col=0, encoding="utf-8")
+        relative_path = "data/archive_data.csv"
+        # Turn the csv into a pandas array
+        self.archive_df = pd.read_csv(relative_path)
 
         # Initiate the variables that will be used for polymerization
-        self.dp = degree_of_polymerization
-        self.monomer_smiles = ""
+        self.dp = dp
+        self.monomer_smiles = monomer_smiles
+        self.rxn_mechanism = poly_type
         self.initiator_smiles = ""
         self.initiation_rxn_str = ""
         self.propagation_rxn_str = ""
-        self.rxn_mechanism = ""
-
 
         # Dictionary covers various configurations of Ring-Opening Polymerization (ROP)
         # [substructure, initiation rxn, propagation rxn]
@@ -153,8 +143,8 @@ class Polymerization:
 
     def main(self):
         '''
-            When polymerization.main() is called, polymerizes every monomer in the dataset to the user's requested
-            degree of polymerization (dp). Additionally, adds solvent data to the dataset. 
+            When polymerization.main() is called, polymerizes the monomer to the user's requested
+            degree of polymerization (dp). 
 
             Parameters: 
                 None
@@ -162,83 +152,35 @@ class Polymerization:
             Output:
                 None
         '''
-                
-        self.addSolventCol()
-        
-        # Drop old columns in case this has been run before
-        self.df = self.df[self.df.columns.drop(list(self.df.filter(regex="DP_")))]
 
-        col_names = ["DP_" + str(i) for i in range(self.degree_of_polymerization + 1)]
-
-        new_columns_df = pd.DataFrame("", columns=col_names, index=self.df.index)
-        self.df = pd.concat([self.df, new_columns_df], axis=1)
-
-        num_cols = -1 * (self.degree_of_polymerization + 1)
+        keys = ["DP_" + str(i) for i in range(self.dp + 1)]
 
         # Apply polymerize data
-        self.df[self.df.columns[num_cols:]] = self.df.apply(func=self.makePolymers, axis=1)
+        try: 
+            polymerized_data = self.makePolymers()
+            if polymerized_data == np.nan:
+                # if fail to polymerize data, check archive and return from archive
+                return self.unavailablePolymers(keys)
+            else:
+                return dict(zip(keys, polymerized_data))
+        
 
-        # Fill in missing polymerizations with old data
-        self.unavailablePolymers()
+        except:
+            # Fill in missing polymerizations with old data
+            return self.unavailablePolymers(keys)
 
-        # save final dataframe
-        self.df.to_csv(self.final_path, encoding='utf-8-sig')
-
-        print("\nPolymerization Complete :)")
-
-    def addSolventCol(self):
-        '''
-            A function that adds solvent data to the new data csv that will have the polymerized smiles
-
-            Parameters: 
-                None
-            
-            Output:
-                None
-        '''
-
-        # Dataframes
-        solvent_df = pd.read_csv(
-            self.solvent_path,
-            index_col=0,
-            encoding="utf-8",
-            usecols=[
-                "Solvent",
-                "Solvent_SMILES",
-                "Solvent_SMILES_2",
-                "SOLV_PARAM_s_g",
-                "SOLV_PARAM_b_g",
-                "SOLV_PARAM_e_g",
-                "SOLV_PARAM_l_g",
-                "SOLV_PARAM_a_g",
-                "SOLV_PARAM_c_g",
-                "SOLV_PARAM_visc at 298 K (cP)",
-                "SOLV_PARAM_dielectric constant",
-            ],
-        )
-
-        if "SOLV_PARAM_s_g" in self.df.columns: 
-            print("Solvent Columns have already been added")
-        else:
-            # Merge on solvents (make sure to run just once!)
-            self.df = pd.merge(self.df, solvent_df, on="Solvent", how="left")
-
-    def makePolymers(self, row):
+    def makePolymers(self):
         '''
             A function that defines the initiation and propagation reaction depending on the type of polymerization
             the monomer undergoes. In most cases, Ge is used as the initiator for easy replacement with carbon later on. Calls
-            the functino that polymerizes the monomer and returns its output
+            the function that polymerizes the monomer and returns its output
 
             Parameters: 
-                row: row from the datatable
+                None
             
             Output:
-                (pd.Series): the array of polymerized smile strings. Returns an empty array if the monomer could not be polymerized
+                (list): the array of polymerized smile strings. Returns an empty array if the monomer could not be polymerized
         '''
-
-        # Create molecules
-        self.rxn_mechanism = row["BASE_Category"] # type of polymerization
-        self.monomer_smiles = row["Canonical SMILES"]
 
         try:
             # create molecules
@@ -276,13 +218,12 @@ class Polymerization:
                     print(
                 f"No matching substructure found. {self.monomer_smiles} cannot be polymerized using any kind of ROP."
             )
-                    return pd.Series([np.nan] * (self.dp + 1))
-
+                    return np.nan
             return self.polymerize()
         
         except:
             print(f"Polymerization mechanism {self.rxn_mechanism} not found for {self.monomer_smiles}.")
-            return pd.Series([np.nan] * (self.dp + 1))
+            return np.nan
 
     def getROPSteps(self):
         '''
@@ -341,7 +282,7 @@ class Polymerization:
                 None            
 
             Output:
-                (pd.Series): an array of the polymerized molecules
+                (list): a list of the polymerized molecules as smiles strings
         '''
                 
         monomer = Chem.MolFromSmiles(self.monomer_smiles)
@@ -397,66 +338,40 @@ class Polymerization:
             else:
                 poly_list.append(Chem.MolToSmiles(polymer))
 
-        return pd.Series(poly_list)
+        return poly_list
     
-    def unavailablePolymers(self):
+    def unavailablePolymers(self,keys):
         '''
-            Fills in the data for polymers that are missing (ie. the ones labeled misc or that could not be polymerized) with
+            Fills in the data for polymers that are missing (ie. misc or could not be polymerized) with
             data from archive. 
 
             Parameters: 
-                None
+                keys(list): the keys to the dictionary that will be returned. the keys for the dict are the degrees of polymerization 
             
             Output:
                 None
         '''
-        archive_df = pd.read_csv(self.archive_path, index_col = 0, encoding="utf-8")
-        canonical = []
-        for smi in archive_df["Monomer_SMILES"].tolist():
-            mol = Chem.MolFromSmiles(smi)
-            canonical.append(Chem.MolToSmiles(mol))
-        archive_df["Canonical SMILES"] = canonical
-        num_unknown = 0
 
-        # Loop through the dataframe, look for matches in the archive dataframe if DP_x pieces are missing
-        for index, row in self.df.iterrows():
-            # Check if the monomer (DP_0) is blank
+        # make dictionary to return
+        return_dict = {key: np.nan for key in keys}
 
-            if pd.isnull(row["DP_0"]):
-                num_unknown += 1
-                # Save canonical SMILES value
-                canonical_smiles_value = row["Canonical SMILES"]
+        # Check if the value appears in the 'Canonical SMILES' column of archive_df
+        if self.monomer_smiles in self.archive_df["Canonical SMILES"].values:
+            # Loop through all columns with missing values
+            for i in range(self.dp + 1):
+                dp_column_name = f"DP_{i}"
 
-                # Check if the value appears in the 'Canonical SMILES' column of archive_df
-                if canonical_smiles_value in archive_df["Canonical SMILES"].values:
-                    # Loop through all columns with missing values
-                    for i in range(self.degree_of_polymerization + 1):
-                        dp_column_name = f"DP_{i}"
+                # Get the corresponding DP_i value from archive_df
+                corresponding_dp_i = self.archive_df.loc[
+                    self.archive_df["Canonical SMILES"] == self.monomer_smiles,
+                    dp_column_name,
+                ].values
 
-                        # Get the corresponding DP_i value from archive_df
-                        corresponding_dp_i = archive_df.loc[
-                            archive_df["Canonical SMILES"] == canonical_smiles_value,
-                            dp_column_name,
-                        ].values
-
-                        # self.df[dp_column_name] = self.df[dp_column_name].astype(object)
-
-                        # Check if there is a corresponding DP_i value
-                        self.df.loc[index, dp_column_name] = corresponding_dp_i[0]
-                else:
-                    print(f"{canonical_smiles_value} does not appear in archive_df")
-
-
-
-# if __name__ == "__main__":
-#     # Path to folder with data sets (should end in something simlar to ''/0_data_sets/')
-#     path = "/Users/hunter/Downloads/BROADBELT LAB/TC_ML_forked/dH_prediction/0_data_sets/"
-
-#     # Set max degree of polymerization
-#     degree_of_polymerization = 5
-
-#     # add the features
-#     polymerize = polymerization(path, degree_of_polymerization)
-#     polymerize.main()
-
+                # Check if there is a corresponding DP_i value
+                return_dict[dp_column_name] = corresponding_dp_i[0]
+        else:
+            print(f"{self.monomer_smiles} polymers could not be found")
+            return np.nan
+        
+        return return_dict
 
