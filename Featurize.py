@@ -2,7 +2,7 @@
     this python file contains functions for obtaining feature data for monomers
 
     Available features:
-        1. pre-estimation property (PEP)
+        1. pre-estimation property (PEP) - dH only
         2. Tanimoto M/S similarity
         3. Dipole moment
         4. Solvent parameters
@@ -63,7 +63,7 @@ repeat_rop = rdChemReactions.ReactionFromSmarts(
     "([C,S:1](=[O,S:2])@[O,S,N:3]@[C:4]).[*:5]-[*:6]>>([C,S:1](=[O,S:2])[*:5].[*:6]-[O,S,N:3][C:4])"
 )
 
-repeat_ald = rdChemReactions.ReactionFromSmarts(
+repeat_ionic = rdChemReactions.ReactionFromSmarts(
     "[C:1]=[O,S:2].[*:3]-[*:4]>>[*:3]-[C:1]-[O,S:2]-[*:4]"
 )
 
@@ -79,8 +79,8 @@ repeat_rxn_dict = {
     "ROP": repeat_rop,
     "ROMP": repeat_romp,
     "cationic": repeat_cationic,
-    "vinyl/acrylic": repeat_vinyl,
-    "aldehyde": repeat_ald,
+    "vinyl": repeat_vinyl,
+    "ionic": repeat_ionic,
     "cyclic": repeat_cyclic,
 }
 
@@ -100,7 +100,7 @@ def getRepeatUnit(monomer_smiles, polymerization_type):
     monomer = MolFromSmiles(monomer_smiles)
 
     try:
-        relative_path = "data/archive_data.csv"
+        relative_path = "data archive/featurized_archive.csv"
         # Turn the csv into a pandas array
         archive_df = pd.read_csv(relative_path)
 
@@ -127,553 +127,6 @@ def getRepeatUnit(monomer_smiles, polymerization_type):
             print("No repeat unit for", monomer_smiles)
             return np.nan
 
-# ---------- FEATURE FUNCTIONS ---------- #
-def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name):
-    output = {}
-
-    output.update(getExperimentalSolvent(solvent_name))
-    solvent_smiles = output["Solvent_SMILES"]
-
-    # store original data into the dictionary
-    output["Canonical_Monomer_SMILES"] = monomer_smiles
-    output["Solvent"] = solvent_name
-    output["BASE_Monomer_State"] = monomer_base_state
-    output["BASE_poly_type"] = polymerization_type
-
-    # include degrees of polymerization
-    output.update(Polymerization(monomer_smiles, polymerization_type,dp).main())
-
-    output["PGTHERMO_PEP_ (kcal/mol)"] = getPEP(monomer_smiles, polymerization_type, dp)
-    output["Tanimoto_Similarity"] = getTanimotoSimilarity(monomer_smiles,monomer_base_state,solvent_smiles)
-    
-    # for functions that return a dictionary, rather than making a new (key, value) pair, update the current dictionary instead
-    output.update(getDipoles(monomer_smiles))   
-    output.update(getSolvent(monomer_smiles, monomer_base_state, solvent_smiles))
-    output.update(getSolute(monomer_smiles))
-    output.update(getRdkitDescriptors(monomer_smiles))
-    output.update(getSterics(monomer_smiles, polymerization_type))
-
-    output["STERIC_wienerIndex"] = getWienerIndex(monomer_smiles, polymerization_type)
-    output["STERIC_chiralCenters"] = getNumChiralCenters(monomer_smiles)
-    output["STERIC_radiusGyration"] = getRadiusofGyration(monomer_smiles)
-    output["STERIC_spherocity"] = getSpherocity(monomer_smiles)
-    
-    output.update(getVolume(monomer_smiles))
-
-    output["STERIC_numBridgeheadAtoms"] = getNumBridgeheadAtoms(monomer_smiles)
-    output["STERIC_numStereocenters"] = getNumStereocenters(monomer_smiles, polymerization_type)
-
-    return output
-
-def getPEP(monomer_smiles, poly_type,dp):
-    '''
-        A function that solves for and returns the pre-estimation property feature.
-        The pre-estimation property is found using pgthermo.
-
-        Parameters:
-            monomer_smiles (str): smiles string of monomer
-            poly_type (str): the type of polymerization the monomer undergoes
-            dp (str): the degree of polymerization want to calculate it
-
-        Output:
-            (float): the PEP
-    '''
-    if dp < 3:
-        raise ValueError("Degree of polymerization input must be greater than 2")
-    # Calculate Hf
-    hf_missing = []
-    hf_list = []
-
-    # add the polymers and solvents to data
-    polymerize_data = Polymerization(monomer_smiles, poly_type,dp)
-    polymer_smiles = polymerize_data.main()
-
-    if polymer_smiles == np.nan or polymer_smiles == None:
-        return np.nan
-    
-    else:
-
-        # iterate through all the degrees of polymerization and get the corresponding heat of formation
-        for molecule in polymer_smiles.values():
-            enthalpy = prop.Hf(molecule, return_missing_groups=True)
-
-            if type(enthalpy) is list: 
-                # there are missing groups present so pgthermo can't compelte enthalpy calculation
-                # enthalpy variable is a list of the groups that are missing
-                hf_missing.append(list(set(enthalpy))) 
-                # eliminate duplicates in the list
-                hf_list.append(np.nan)
-
-            else:  # type is float, hf successfully calculated
-                hf_list.append(enthalpy)
-
-        #calculate the estimation property PGTHERMO_dH_ (our PEP)
-        pep = round(
-            hf_list[2] - hf_list[1] - hf_list[0], 2
-        )
-        
-        return pep
-
-def getTanimotoSimilarity(monomer_smiles,monomer_base_state,solvent_smiles):
-    '''
-        A function that uses tanimoto to quantify similarity between monomer and solvent.
-
-        Parameters:
-            monomer_smiles(str): the smiles string of the monomer
-            solvent_smiles (str): the smiles string of the solvent
-            monomer_base_state (str): the state that the monomer is in
-        Output:
-            (int): similarity value
-    '''
-
-    # If liquid monomer, max similarity
-    if monomer_base_state == "l":
-        return 1
-
-    # If solution-phase monomer, calculate similarity based on fingerprints
-    elif monomer_base_state == "s":
-        if pd.isna(solvent_smiles):
-            # Error if solvent data missing
-            print("\tss without solvent:", monomer_smiles)
-            return -2
-
-        # Calculate
-        mol1 = MolFromSmiles(monomer_smiles)
-        mol2 = MolFromSmiles(solvent_smiles)
-
-        fp1 = GetMorganFingerprintAsBitVect(mol1, 3, nBits=2048)
-        fp2 = GetMorganFingerprintAsBitVect(mol2, 3, nBits=2048)
-
-        score = round(TanimotoSimilarity(fp1, fp2), 3)
-
-        return score
-
-    # For gas monomer, similarity should be none
-    else:
-        return -1
-
-def getDipoles(monomer_smiles):
-    '''
-        A function that solves for and saves the dipole moment of the monomer
-
-        Parameters:
-            monomer_smiles (str)
-
-        Output:
-            (dictionary): the keys are the methods to calcualte the dipole and the values are the dipole values
-    '''
-    # methods used to calculate dipole: gasteiger, mmff94, eem2015bm
-    dipoles = {}
-
-    dipoles["DIPOLE_gasteiger"] = (dipoleHelper("gasteiger", monomer_smiles))
-    dipoles["DIPOLE_mmff94"] = (dipoleHelper("mmff94", monomer_smiles))
-    dipoles["DIPOLE_eem2015bm"] = (dipoleHelper("eem2015bm", monomer_smiles))
-
-    return dipoles
-
-def getSolvent(monomer_smiles, monomer_base_state, solvent_smiles = "NA"):
-    '''
-        A function that returns solvent features for a specific monomer
-
-        Parameters:
-            monomer_smiles (str)
-            monomer_base_state (str): the state that the monomer is in
-            solvent_smiles (str)
-
-        Output:
-            (dictionary): a dictionary containg the solvent data
-    '''
-    solvent_data = {
-        "MIX_dGsolv298(kJ/mol)": 0,
-        "MIX_dHsolv298(kJ/mol)": 0,
-        "MIX_dSsolv298(kJ/mol/K)": 0,
-        "MIX_logK": 0,
-        "MIX_logP": 0,
-        "MIX_dGsolv298(kJ/mol) epi.unc.": 0,
-        "MIX_dHsolv298(kJ/mol) epi.unc.": 0,
-    }
-    relative_path = "data/archive_data.csv"
-    # Turn the csv into a pandas array
-    archive_df = pd.read_csv(relative_path)
-
-    if solvent_smiles == np.nan:
-        # there is no solvent
-        solvent_smiles = "NA"
-
-    solvent_pair_lookup = np.nan
-
-    #solvent pair lookup is dependent on the base state of the monomer
-    if monomer_base_state == 'l':
-        solvent_pair_lookup = monomer_smiles+ '_' + monomer_smiles
-    elif monomer_base_state == 's' and solvent_smiles != "NA":
-        solvent_pair_lookup = monomer_smiles + '_' + solvent_smiles
-    elif monomer_base_state == 's' and solvent_smiles != "NA":
-        raise ValueError("Solvent smiles must be provided for monomers with base state 's'")
-    else:
-        print(f"No solvent data for monomers with base state '{monomer_base_state}'")
-        return solvent_data
-    
-    match_columns = ["MIX_dGsolv298(kJ/mol)", "MIX_dHsolv298(kJ/mol)", "MIX_dSsolv298(kJ/mol/K)", "MIX_logK", "MIX_logP", "MIX_dGsolv298(kJ/mol) epi.unc.", "MIX_dHsolv298(kJ/mol) epi.unc."]
-
-    if solvent_pair_lookup in archive_df["Solvent_pair_lookup"].values:
-        # Loop through all columns and see if there is a matching value 
-        for col_name in match_columns:
-            corresponding_i = archive_df.loc[
-                archive_df["Solvent_pair_lookup"] == solvent_pair_lookup, col_name
-            ].values
-
-            solvent_data[col_name] = corresponding_i[0]
-
-    all_nans = all(np.isnan(key) if isinstance(key, float) else False for key in solvent_data.keys())
-
-    if all_nans:
-        print("all nans")
-        # If no matches in archive, query website
-        return chempropSolvationHelper(monomer_smiles, monomer_base_state, solvent_smiles)
-    
-    return solvent_data
-
-def getSolute(monomer_smiles):
-    '''
-        A function that returns solute features for a specific monomer
-
-        Parameters:
-            monomer_smiles (str)
-
-        Output:
-            (dictionary): dictionary of solute data
-    '''
-
-    # Start with GC
-    
-    relative_path = "data/archive_data.csv"
-    # Turn the csv into a pandas array
-    archive_df = pd.read_csv(relative_path)
-
-    solute_data = {
-        "SOLUTE_PARAM_E_GC": np.nan,
-        "SOLUTE_PARAM_S_GC": np.nan,
-        "SOLUTE_PARAM_A_GC": np.nan,
-        "SOLUTE_PARAM_B_GC": np.nan,
-        "SOLUTE_PARAM_L_GC": np.nan,
-        "SOLUTE_PARAM_V_GC": np.nan,
-        "SOLUTE_PARAM_E_ML": np.nan,
-        "SOLUTE_PARAM_S_ML": np.nan,
-        "SOLUTE_PARAM_A_ML": np.nan,
-        "SOLUTE_PARAM_B_ML": np.nan,
-        "SOLUTE_PARAM_L_ML": np.nan,
-        "SOLUTE_PARAM_V_ML": np.nan,
-    }
-
-    # Look for matches in archive
-    if monomer_smiles in archive_df['Canonical SMILES'].values:
-        # Loop through all columns with missing values
-        for key in solute_data:
-            corresponding_i = archive_df.loc[
-                archive_df["Canonical SMILES"] == monomer_smiles, key
-            ].values
-
-            solute_data[key] = corresponding_i[0]
-
-    all_nans = all(np.isnan(key) if isinstance(key, float) else False for key in solute_data.keys())
-
-    # if not in archive data, query website
-    if all_nans: 
-            return soluteHelper()
-
-    return solute_data
-
-def getRdkitDescriptors(monomer_smiles):
-    '''
-        A function that returns rdkit descriptor features for a specific monomer
-
-        Parameters:
-            monomer_smiles (str)
-
-        Output:
-            (dictionary): a dictionary of all the rdkit values
-    '''
-    # Disable RDKit warnings
-    RDLogger.DisableLog('rdApp.warning')
-
-    # get column names, add prefix, and append
-    names = [("RDKIT_" + x[0]) for x in Descriptors._descList]
-    # Convert list to dictionary with default value None
-    rdkit_dict = {col: np.nan for col in names}
-
-    mol = MolFromSmiles(monomer_smiles)
-
-    calc = MoleculeDescriptors.MolecularDescriptorCalculator(
-        [x[0] for x in Descriptors._descList]
-    )
-    dict_vals = calc.CalcDescriptors(mol)
-    keys = list(rdkit_dict.keys())
-    rdkit_dict.update(dict(zip(keys, dict_vals)))
-
-
-    return rdkit_dict
-
-# STERIC FEATURE FUNCTIONS
-def getSterics(monomer_smiles, polymerization_type):
-    '''
-        A function that returns steric features for a specific monomer
-
-        Parameters:
-            None
-
-        Output:
-            None
-    '''
-    repeat_unit = getRepeatUnit(monomer_smiles, polymerization_type)
-
-    bb_lens = np.nan
-    ratios = np.nan
-
-    # retrieve backbone length and ratio
-    try:
-        bb_lens, ratios = stericsHelper(repeat_unit)
-
-    except:
-        bb_lens = np.nan
-        ratios = np.nan
-    
-    output = {"STERIC_backbone_length": bb_lens, "STERIC_ratioSideChainContainingAtoms": ratios}
-    
-    return output
-
-def getWienerIndex(monomer_smiles, polymerization_type):
-    '''
-        A function that calcualtes the Wiener Index
-         
-        altered Greg Landrum's code: 
-        https://sourceforge.net/p/rdkit/mailman/message/36802142/
-
-        Parameters: 
-            monomer_smiles (str)
-        
-        Output:
-            (int): the sum of distances between all pairs of atoms in the molecule
-
-    '''    
-    try:
-        repeat_unit = getRepeatUnit(monomer_smiles, polymerization_type)
-        mol = MolFromSmiles(repeat_unit)
-        sum = 0
-        # amat is a distance matrix
-        amat = GetDistanceMatrix(mol)
-        num_atoms = mol.GetNumAtoms()
-
-        for i in range(num_atoms):
-            for j in range(i+1,num_atoms):
-                # adds the distance between atom i and j
-                sum += amat[i][j]
-        return sum
-    except: 
-        print(f"Could not get Wiener Index for {monomer_smiles}")
-        return np.nan
-
-def getNumChiralCenters(monomer_smiles):
-    '''
-        A function that provides which atoms in the molecule are chiral centers and the orientation of the center
-
-        Parameters:
-            monomer_smiles (str)
-        
-        Output:
-            (int): the count of chiral centers
-    '''
-
-    mol = MolFromSmiles(monomer_smiles)
-    chiral_list = FindMolChiralCenters(mol)
-
-    fin_list = []
-    for center in chiral_list:
-        atomic_num = center[0]
-        atom_name = periodictable.elements[atomic_num]
-        # [atom, orientation]
-        fin_list.append([atom_name,center[1]])
-
-    ## can adjust the function to output fin_list if you would rather have atom_name and center orientation information 
-    return len(fin_list)
-
-def getRadiusofGyration(monomer_smiles):
-    '''
-        A function that calcualtes the radius of gyration
-         
-        altered from the following github code: 
-        https://github.com/rdkit/rdkit/issues/2924
-
-        Parameters: 
-            monomer_smiles (str)
-        
-        Output:
-            (float): the radius
-    '''    
-
-    mol = MolFromSmiles(monomer_smiles)
-
-    # generate conformers for molecule to work in 3d space
-    m3d=getConformers(mol)
-
-    if m3d.GetNumConformers()>=1:
-        radius = CalcRadiusOfGyration(m3d)
-        return radius
-    else: 
-        return np.nan
-
-def getSpherocity(monomer_smiles):
-    '''
-        A function that measures the spherocity of a monomer
-
-        Parameters:
-            monomer_smiles(str)
-        Output:
-            (float) spheroity id
-    '''
-
-    try:
-        mol = MolFromSmiles(monomer_smiles)
-
-        # generate conformers for molecule to work in 3d space
-        m3d=getConformers(mol)
-
-        sphere_id = CalcSpherocityIndex(m3d)
-        return sphere_id
-    except:
-        print(f"Could not get spherocity of {monomer_smiles}")
-        return np.nan
-
-def getVolume(monomer_smiles):
-    '''
-        A function that uses rdkit to find the Van der Waals volume and total volume of a molecule 
-
-        Parameters:
-            monomer_smiles(str)
-        Output:
-            (dictionary) contains the volumes
-    '''
-
-    try: 
-        output = {}
-        mol= MolFromSmiles(monomer_smiles)
-        
-        # generate conformers for molecule to work in 3d space
-        m3d=getConformers(mol)
-
-        dcl_id = DoubleCubicLatticeVolume(m3d)
-
-        # Get the van der Waals Volume of the molecule 
-        output["STERIC_vdwVolume"] = dcl_id.GetVDWVolume()
-        output["STERIC_totalVolume"] = dcl_id.GetVolume()
-
-        return output
-
-    except:
-        print(f"unable to get volume/vdw volume for {monomer_smiles}")
-        return np.nan
-
-def getNumBridgeheadAtoms(monomer_smiles):
-    '''
-        A function that uses rdkit to find the number of bridgehead atoms
-
-        Parameters:
-            monomer_smiles(str)
-        Output:
-            (int) a count of the number of bridgehead atoms
-    '''
-
-    mol = MolFromSmiles(monomer_smiles)
-    bh = CalcNumBridgeheadAtoms(mol)
-    return bh
-
-def getNumStereocenters(monomer_smiles, polymerization_type):
-    '''
-        A function that uses rdkit to find potential stereo elements in a molecule 
-
-        Parameters:
-            monomer_smiles(str)
-        Output:
-            (int) a count of the number of stereocenters
-    '''
-
-    repeat_unit_smiles = getRepeatUnit(monomer_smiles, polymerization_type)
-    mol = MolFromSmiles(repeat_unit_smiles)
-    # p_stereos is a list of StereoInfo objects
-    p_stereos = FindPotentialStereo(mol)
-    return len(p_stereos)
-
-def getExperimentalSolvent(solvent_name):
-    '''
-        Solvent data
-
-        Parameters: 
-            solvent_name (str)
-        
-        Output:
-            (dictionary)
-    '''
-    solvent_path = "data/solvent_data.csv"
-
-    try:
-        # Dataframes
-        solvent_df = pd.read_csv(
-            solvent_path,
-            encoding="utf-8",
-            usecols=[
-                "Solvent",
-                "Solvent_SMILES",
-                "Solvent_SMILES_2",
-                "SOLV_PARAM_s_g",
-                "SOLV_PARAM_b_g",
-                "SOLV_PARAM_e_g",
-                "SOLV_PARAM_l_g",
-                "SOLV_PARAM_a_g",
-                "SOLV_PARAM_c_g",
-                "SOLV_PARAM_visc at 298 K (cP)",
-                "SOLV_PARAM_dielectric constant",
-            ],
-        )
-
-        idx_match = solvent_df.loc[
-            solvent_df["Solvent"] == solvent_name
-        ].index[0]
-        
-        matching_row = solvent_df.iloc[idx_match]
-        solvent_data = {
-            "Solvent": matching_row["Solvent"],
-            "Solvent_SMILES": matching_row["Solvent_SMILES"],
-            "Solvent_SMILES_2": matching_row["Solvent_SMILES_2"],
-            "SOLV_PARAM_s_g": matching_row["SOLV_PARAM_s_g"],
-            "SOLV_PARAM_b_g": matching_row["SOLV_PARAM_b_g"],
-            "SOLV_PARAM_e_g": matching_row["SOLV_PARAM_e_g"],
-            "SOLV_PARAM_l_g": matching_row["SOLV_PARAM_l_g"],
-            "SOLV_PARAM_a_g": matching_row["SOLV_PARAM_a_g"],
-            "SOLV_PARAM_c_g": matching_row["SOLV_PARAM_c_g"],
-            "SOLV_PARAM_visc at 298 K (cP)": matching_row["SOLV_PARAM_visc at 298 K (cP)"],
-            "SOLV_PARAM_dielectric constant": matching_row["SOLV_PARAM_dielectric constant"],
-        }
-
-        return solvent_data
-    
-    except:
-        print(f"There is no information on {solvent_name} in the solvent data file")
-        # if no experimental solvent data, return null
-        solvent_data = {
-            "Solvent": np.nan,
-            "Solvent_SMILES": np.nan,
-            "Solvent_SMILES_2": np.nan,
-            "SOLV_PARAM_s_g": np.nan,
-            "SOLV_PARAM_b_g": np.nan,
-            "SOLV_PARAM_e_g": np.nan,
-            "SOLV_PARAM_l_g": np.nan,
-            "SOLV_PARAM_a_g": np.nan,
-            "SOLV_PARAM_c_g": np.nan,
-            "SOLV_PARAM_visc at 298 K (cP)": np.nan,
-            "SOLV_PARAM_dielectric constant": np.nan,
-        }
-        return solvent_data
-
-
 # ---------- HELPER FUNCTIONS ---------- #
 
 def dipoleHelper(method, smiles):
@@ -682,13 +135,13 @@ def dipoleHelper(method, smiles):
 
         Parameters:
             method (str): the method to use for calculating dipole
-            smiles (str): the smiles string of the molecule 
+            smiles (str): the canonical smiles string of the molecule 
 
         Output:
-            (float) 
+            (float): dipole moment
     '''
     if "Si" in smiles and method != "mmff94":
-        ## molecules with Si do not work for methods other than mmff94
+        # molecules with Si do not work with methods other than mmff94
         return np.nan
     else:
         os.system('obabel -:"' + str(smiles) + '" -i smiles -O temp.sdf --gen3d')
@@ -713,12 +166,12 @@ def chempropSolvationHelper(monomer_smiles, monomer_base_state, solvent_smiles):
         a function that retrieves solvent data from a website
 
         Parameters:
-            monomer_smiles (str)
-            monomer_base_state (str)
-            solvent_smiles (str)
+            monomer_smiles(str): the canonical smiles string of the monomer
+            monomer_base_state (str): the state (liquid, solution or gas) that the monomer is in 
+            solvent_smiles (str): the canonical smiles string of the molecule 
 
         Output:
-            (dictionary): collection of data on the solvent
+            (dictionary): collection of solvent features obtained from rmg.mit. keys have prefix MIX_
     '''
     empty_dict = {
         "MIX_dGsolv298(kJ/mol)": 0,
@@ -769,13 +222,13 @@ def chempropSolvationHelper(monomer_smiles, monomer_base_state, solvent_smiles):
 
 def soluteHelper(monomer_smiles):
     '''
-        a function that retrieves solute data from a website
+        a function that retrieves solute features from rmg.mit
 
         Parameters:
-            monomer_smiles (str)
+            monomer_smiles(str): the canonical smiles string of the monomer
 
         Output:
-            (dictionary): collection of data on the solute
+            (dict): collection of data on the solute. keys have the prefix SOLUTE_
     '''
 
     # base url to website that does the calculations
@@ -861,9 +314,591 @@ def stericsHelper(repeat_unit_smiles):
         return 0
 
 def getConformers(mol):
+    """
+        A function to generate the conformeres for a molecule to work in 3d space
+
+        Parameters:
+            mol (mol): from rdkit, a molecule
+
+        Returns:
+            m3d
+    """
+
     # generate conformers for molecule to work in 3d space
     m3d=Chem.AddHs(mol)
     AllChem.EmbedMolecule(m3d)
     AllChem.MMFFOptimizeMolecule(m3d)
     return m3d
 
+# ---------- FEATURE FUNCTIONS ---------- #
+def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name, target):
+    '''
+        A function that gets all the features for a monomer
+
+        Parameters:
+            monomer_smiles (str): canonical smiles string of monomer
+            monomer_base_state (str): the state (liquid, solution or gas) that the monomer is in 
+            polymerization_type (str): the type of polymerization that the monomer undergoes
+            dp (int): degree of polymerization
+            solvent_name (str): the name of the solvent
+            target(str): either "dH" for enthalpy or "dS" for entropy. only difference in output is inclusion of PGTHERMO_PEP feature
+
+        Output:
+            (dict): a dictionary containing all of the features and input parameters
+    '''
+
+    output = {}
+    # store original data into the dictionary
+    output["Canonical_Monomer_SMILES"] = monomer_smiles
+    output["Solvent"] = solvent_name
+    output["BASE_Monomer_State"] = monomer_base_state
+    output["BASE_polymerization_type"] = polymerization_type
+
+    solvent_smiles = np.nan
+
+    if not pd.isna(solvent_name):
+        output.update(getExperimentalSolvent(solvent_name))
+        solvent_smiles = output["Solvent_SMILES"]
+
+    # include degrees of polymerization
+    output.update(Polymerization(monomer_smiles, polymerization_type,dp).main())
+
+    if target == "dH":
+        # this is a parameter that is special to enthalpy
+        output["PGTHERMO_PEP_ (kcal/mol)"] = getPEP(monomer_smiles, polymerization_type, dp)
+
+    output["Tanimoto_Similarity"] = getTanimotoSimilarity(monomer_smiles,monomer_base_state,solvent_smiles)
+    
+    # for functions that return a dictionary, rather than making a new (key, value) pair, update the current dictionary instead
+    output.update(getDipoles(monomer_smiles))   
+    output.update(getSolventFeatures(monomer_smiles, monomer_base_state, solvent_smiles))
+    output.update(getSoluteFeatures(monomer_smiles))
+    output.update(getRdkitDescriptors(monomer_smiles))
+    output.update(getSterics(monomer_smiles, polymerization_type))
+
+    output["STERIC_wienerIndex"] = getWienerIndex(monomer_smiles, polymerization_type)
+    output["STERIC_chiralCenters"] = getNumChiralCenters(monomer_smiles)
+    output["STERIC_radiusGyration"] = getRadiusofGyration(monomer_smiles)
+    output["STERIC_spherocity"] = getSpherocity(monomer_smiles)
+    
+    output.update(getVolume(monomer_smiles))
+
+    output["STERIC_numBridgeheadAtoms"] = getNumBridgeheadAtoms(monomer_smiles)
+    output["STERIC_numStereocenters"] = getNumStereocenters(monomer_smiles, polymerization_type)
+
+    return output
+
+def getPEP(monomer_smiles, polymerization_type,dp):
+    '''
+        A function that solves for and returns the pre-estimation property feature.
+        The pre-estimation property is found using pgthermo and is only used for enthalpy features.
+
+        Parameters:
+            monomer_smiles (str): canonical smiles string of monomer
+            polymerization_type (str): the type of polymerization the monomer undergoes
+            dp (str): the degree of polymerization want to calculate it
+
+        Output:
+            (float): the PEP
+    '''
+    if dp < 3:
+        raise ValueError("Degree of polymerization input must be greater than 2")
+    # Calculate Hf
+    hf_missing = []
+    hf_list = []
+
+    # add the polymers and solvents to data
+    polymerize_data = Polymerization(monomer_smiles, polymerization_type,dp)
+    polymer_smiles = polymerize_data.main()
+
+    if polymer_smiles == np.nan or polymer_smiles == None:
+        return np.nan
+    
+    else:
+
+        # iterate through all the degrees of polymerization and get the corresponding heat of formation
+        for molecule in polymer_smiles.values():
+            enthalpy = prop.Hf(molecule, return_missing_groups=True)
+
+            if type(enthalpy) is list: 
+                # there are missing groups present so pgthermo can't compelte enthalpy calculation
+                # enthalpy variable is a list of the groups that are missing
+                hf_missing.append(list(set(enthalpy))) 
+                # eliminate duplicates in the list
+                hf_list.append(np.nan)
+
+            else:  # type is float, hf successfully calculated
+                hf_list.append(enthalpy)
+
+        #calculate the estimation property PGTHERMO_dH_ (our PEP)
+        pep = round(
+            hf_list[2] - hf_list[1] - hf_list[0], 2
+        )
+        
+        return pep
+
+def getTanimotoSimilarity(monomer_smiles,monomer_base_state,solvent_smiles):
+    '''
+        A function that uses tanimoto to quantify similarity between monomer and solvent.
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+            monomer_base_state (str): the state (liquid, solution or gas) that the monomer is in 
+            solvent_smiles (str): the canonical smiles string of the solvent
+
+        Output:
+            (float): similarity value
+    '''
+
+    # If liquid monomer, max similarity
+    if monomer_base_state == "l":
+        return 1
+
+    # If solution-phase monomer, calculate similarity based on fingerprints
+    elif monomer_base_state == "s":
+        if pd.isna(solvent_smiles):
+            # Error if solvent data missing
+            print("\tss without solvent:", monomer_smiles)
+            return -2
+
+        # Calculate
+        mol1 = MolFromSmiles(monomer_smiles)
+        mol2 = MolFromSmiles(solvent_smiles)
+
+        fp1 = GetMorganFingerprintAsBitVect(mol1, 3, nBits=2048)
+        fp2 = GetMorganFingerprintAsBitVect(mol2, 3, nBits=2048)
+
+        score = round(TanimotoSimilarity(fp1, fp2), 3)
+
+        return score
+
+    # For gas monomer, similarity should be none
+    else:
+        return -1
+
+def getDipoles(monomer_smiles):
+    '''
+        A function that solves for and saves the dipole moment of the monomer
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (dictionary): the keys are the methods to calculate the dipole and the values are the dipole values
+    '''
+    # methods used to calculate dipole: gasteiger, mmff94, eem2015bm
+    dipoles = {}
+
+    dipoles["DIPOLE_gasteiger"] = (dipoleHelper("gasteiger", monomer_smiles))
+    dipoles["DIPOLE_mmff94"] = (dipoleHelper("mmff94", monomer_smiles))
+    dipoles["DIPOLE_eem2015bm"] = (dipoleHelper("eem2015bm", monomer_smiles))
+
+    return dipoles
+
+def getSolventFeatures(monomer_smiles, monomer_base_state, archive_path, solvent_smiles = "NA"):
+    '''
+        A function that returns the solvent features for a monomer
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+            monomer_base_state (str): the state (liquid, solution or gas) that the monomer is in 
+            archive_path (str): the path to the featurized_archive.csv file
+            solvent_smiles (str)*: the canonical smiles string of the solvent
+
+            *solvent_smiles is optional, default value being NA. Only pass in solvent smiles if the monomer base state is in solution
+
+        Output:
+            (dictionary): a dictionary containg the solvent data with the keys having prefix MIX_
+    '''
+    solvent_data = {
+        "MIX_dGsolv298(kJ/mol)": 0,
+        "MIX_dHsolv298(kJ/mol)": 0,
+        "MIX_dSsolv298(kJ/mol/K)": 0,
+        "MIX_logK": 0,
+        "MIX_logP": 0,
+        "MIX_dGsolv298(kJ/mol) epi.unc.": 0,
+        "MIX_dHsolv298(kJ/mol) epi.unc.": 0,
+    }
+
+    # Turn the csv into a pandas array
+    archive_df = pd.read_csv(archive_path)
+
+    if solvent_smiles == np.nan:
+        # there is no solvent
+        solvent_smiles = "NA"
+
+    solvent_pair_lookup = np.nan
+
+    #solvent pair lookup is dependent on the base state of the monomer
+    if monomer_base_state == 'l':
+        solvent_pair_lookup = monomer_smiles+ '_' + monomer_smiles
+    elif monomer_base_state == 's' and solvent_smiles != "NA":
+        solvent_pair_lookup = monomer_smiles + '_' + solvent_smiles
+    elif monomer_base_state == 's' and solvent_smiles != "NA":
+        raise ValueError("Solvent smiles must be provided for monomers with base state 's'")
+    else:
+        print(f"No solvent data for monomers with base state '{monomer_base_state}'")
+        return solvent_data
+    
+    match_columns = ["MIX_dGsolv298(kJ/mol)", "MIX_dHsolv298(kJ/mol)", "MIX_dSsolv298(kJ/mol/K)", "MIX_logK", "MIX_logP", "MIX_dGsolv298(kJ/mol) epi.unc.", "MIX_dHsolv298(kJ/mol) epi.unc."]
+
+    if solvent_pair_lookup in archive_df["Solvent_pair_lookup"].values:
+        # Loop through all columns and see if there is a matching value 
+        for col_name in match_columns:
+            corresponding_i = archive_df.loc[
+                archive_df["Solvent_pair_lookup"] == solvent_pair_lookup, col_name
+            ].values
+
+            solvent_data[col_name] = corresponding_i[0]
+
+    all_nans = all(np.isnan(key) if isinstance(key, float) else False for key in solvent_data.keys())
+
+    if all_nans:
+        print("all nans")
+        # If no matches in archive, query website
+        return chempropSolvationHelper(monomer_smiles, monomer_base_state, solvent_smiles)
+    
+    return solvent_data
+
+def getSoluteFeatures(monomer_smiles, archive_path):
+    '''
+        A function that returns solute features for a specific monomer
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+            archive_path (str): the path to the featurized_archive.csv file
+
+        Output:
+            (dictionary): dictionary of solute data with keys having prefix SOLUTE_
+    '''
+
+    # Start with GC
+    
+    # Turn the csv into a pandas array
+    archive_df = pd.read_csv(archive_path)
+
+    solute_data = {
+        "SOLUTE_PARAM_E_GC": np.nan,
+        "SOLUTE_PARAM_S_GC": np.nan,
+        "SOLUTE_PARAM_A_GC": np.nan,
+        "SOLUTE_PARAM_B_GC": np.nan,
+        "SOLUTE_PARAM_L_GC": np.nan,
+        "SOLUTE_PARAM_V_GC": np.nan,
+        "SOLUTE_PARAM_E_ML": np.nan,
+        "SOLUTE_PARAM_S_ML": np.nan,
+        "SOLUTE_PARAM_A_ML": np.nan,
+        "SOLUTE_PARAM_B_ML": np.nan,
+        "SOLUTE_PARAM_L_ML": np.nan,
+        "SOLUTE_PARAM_V_ML": np.nan,
+    }
+
+    # Look for matches in archive
+    if monomer_smiles in archive_df['Canonical SMILES'].values:
+        # Loop through all columns with missing values
+        for key in solute_data:
+            corresponding_i = archive_df.loc[
+                archive_df["Canonical SMILES"] == monomer_smiles, key
+            ].values
+
+            solute_data[key] = corresponding_i[0]
+
+    all_nans = all(np.isnan(key) if isinstance(key, float) else False for key in solute_data.keys())
+
+    # if not in archive data, query website
+    if all_nans: 
+            return soluteHelper()
+
+    return solute_data
+
+def getRdkitDescriptors(monomer_smiles):
+    '''
+        A function that returns rdkit descriptor features for a specific monomer
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (dictionary): a dictionary of all the rdkit values with keys with prefix RDKIT_
+    '''
+    # Disable RDKit warnings
+    RDLogger.DisableLog('rdApp.warning')
+
+    # get column names, add prefix, and append
+    names = [("RDKIT_" + x[0]) for x in Descriptors._descList]
+    # Convert list to dictionary with default value None
+    rdkit_dict = {col: np.nan for col in names}
+
+    mol = MolFromSmiles(monomer_smiles)
+
+    calc = MoleculeDescriptors.MolecularDescriptorCalculator(
+        [x[0] for x in Descriptors._descList]
+    )
+    dict_vals = calc.CalcDescriptors(mol)
+    keys = list(rdkit_dict.keys())
+    rdkit_dict.update(dict(zip(keys, dict_vals)))
+
+
+    return rdkit_dict
+
+# STERIC feature functions (relevant to entropy)
+def getSterics(monomer_smiles, polymerization_type):
+    '''
+        A function that returns steric features for a specific monomer
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+            polymerization_type (str): the type of polymerization the monomer undergoes
+
+        Output:
+            (dict): a dictionary of steric features. key values have the prefix STERIC_
+    '''
+    repeat_unit = getRepeatUnit(monomer_smiles, polymerization_type)
+
+    bb_lens = np.nan
+    ratios = np.nan
+
+    # retrieve backbone length and ratio
+    try:
+        bb_lens, ratios = stericsHelper(repeat_unit)
+
+    except:
+        bb_lens = np.nan
+        ratios = np.nan
+    
+    output = {"STERIC_backbone_length": bb_lens, "STERIC_ratioSideChainContainingAtoms": ratios}
+    
+    return output
+
+def getWienerIndex(monomer_smiles, polymerization_type):
+    '''
+        A function that calculates the Wiener Index using an altered version of Greg Landrum's code: 
+        https://sourceforge.net/p/rdkit/mailman/message/36802142/
+
+        Parameters: 
+            monomer_smiles(str): the canonical smiles string of the monomer
+            polymerization_type (str): the type of polymerization the monomer undergoes
+
+        Output:
+            (float): the sum of distances between all pairs of atoms in the molecule
+
+    '''    
+    try:
+        repeat_unit = getRepeatUnit(monomer_smiles, polymerization_type)
+        mol = MolFromSmiles(repeat_unit)
+        sum = 0
+        # amat is a distance matrix
+        amat = GetDistanceMatrix(mol)
+        num_atoms = mol.GetNumAtoms()
+
+        for i in range(num_atoms):
+            for j in range(i+1,num_atoms):
+                # adds the distance between atom i and j
+                sum += amat[i][j]
+        return sum
+    except: 
+        print(f"Could not get Wiener Index for {monomer_smiles}")
+        return np.nan
+
+def getNumChiralCenters(monomer_smiles):
+    '''
+        A function that provides which atoms in the molecule are chiral centers and the orientation of the center
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+        
+        Output:
+            (int): the count of chiral centers
+    '''
+
+    mol = MolFromSmiles(monomer_smiles)
+    chiral_list = FindMolChiralCenters(mol)
+
+    fin_list = []
+    for center in chiral_list:
+        atomic_num = center[0]
+        atom_name = periodictable.elements[atomic_num]
+        # [atom, orientation]
+        fin_list.append([atom_name,center[1]])
+
+    ## can adjust the function to output fin_list if you would rather have atom_name and center orientation information 
+    return len(fin_list)
+
+def getRadiusofGyration(monomer_smiles):
+    '''
+        A function that calcualtes the radius of gyration with code altered from the following github code: 
+        https://github.com/rdkit/rdkit/issues/2924
+
+        Parameters: 
+            monomer_smiles(str): the canonical smiles string of the monomer
+        
+        Output:
+            (float): the radius
+    '''    
+
+    mol = MolFromSmiles(monomer_smiles)
+
+    # generate conformers for molecule to work in 3d space
+    m3d=getConformers(mol)
+
+    if m3d.GetNumConformers()>=1:
+        radius = CalcRadiusOfGyration(m3d)
+        return radius
+    else: 
+        return np.nan
+
+def getSpherocity(monomer_smiles):
+    '''
+        A function that measures the spherocity of a monomer using RDKIT
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (float): spheroity id
+    '''
+
+    try:
+        mol = MolFromSmiles(monomer_smiles)
+
+        # generate conformers for molecule to work in 3d space
+        m3d=getConformers(mol)
+
+        sphere_id = CalcSpherocityIndex(m3d)
+        return sphere_id
+    except:
+        print(f"Could not get spherocity of {monomer_smiles}")
+        return np.nan
+
+def getVolume(monomer_smiles):
+    '''
+        A function that uses rdkit to find the Van der Waals volume and total volume of a molecule 
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (dictionary) contains the volumes with keys having prefix STERIC_
+    '''
+
+    try: 
+        output = {}
+        mol= MolFromSmiles(monomer_smiles)
+        
+        # generate conformers for molecule to work in 3d space
+        m3d=getConformers(mol)
+
+        dcl_id = DoubleCubicLatticeVolume(m3d)
+
+        # Get the van der Waals Volume of the molecule 
+        output["STERIC_vdwVolume"] = dcl_id.GetVDWVolume()
+        output["STERIC_totalVolume"] = dcl_id.GetVolume()
+
+        return output
+
+    except:
+        print(f"unable to get volume/vdw volume for {monomer_smiles}")
+        return np.nan
+
+def getNumBridgeheadAtoms(monomer_smiles):
+    '''
+        A function that uses rdkit to find the number of bridgehead atoms
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (int): a count of the number of bridgehead atoms
+    '''
+
+    mol = MolFromSmiles(monomer_smiles)
+    bh = CalcNumBridgeheadAtoms(mol)
+    return bh
+
+def getNumStereocenters(monomer_smiles, polymerization_type):
+    '''
+        A function that uses rdkit to find potential stereo elements in a molecule 
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+            polymerization_type (str): the type of polymerization the monomer undergoes
+
+        Output:
+            (int) a count of the number of stereocenters
+    '''
+
+    repeat_unit_smiles = getRepeatUnit(monomer_smiles, polymerization_type)
+    mol = MolFromSmiles(repeat_unit_smiles)
+    # p_stereos is a list of StereoInfo objects
+    p_stereos = FindPotentialStereo(mol)
+    return len(p_stereos)
+
+def getExperimentalSolvent(solvent_name, solvent_path):
+    '''
+        A function that retrieves the experimental solvent data in solvent_archive
+
+        Parameters: 
+            solvent_name (str): the name of the solvent that the monomer is in
+            solvent_path (str): the path to the solvent_archive.csv
+        
+        Output:
+            (dict): a dictionary of experimental solvent data
+    '''
+
+    try:
+        # Dataframes
+        solvent_df = pd.read_csv(
+            solvent_path,
+            encoding="utf-8",
+            usecols=[
+                "Solvent",
+                "Solvent_SMILES",
+                "Solvent_SMILES_2",
+                "SOLV_PARAM_s_g",
+                "SOLV_PARAM_b_g",
+                "SOLV_PARAM_e_g",
+                "SOLV_PARAM_l_g",
+                "SOLV_PARAM_a_g",
+                "SOLV_PARAM_c_g",
+                "SOLV_PARAM_visc at 298 K (cP)",
+                "SOLV_PARAM_dielectric constant",
+            ],
+        )
+
+        idx_match = solvent_df.loc[
+            solvent_df["Solvent"] == solvent_name
+        ].index[0]
+        
+        matching_row = solvent_df.iloc[idx_match]
+        solvent_data = {
+            "Solvent": matching_row["Solvent"],
+            "Solvent_SMILES": matching_row["Solvent_SMILES"],
+            "Solvent_SMILES_2": matching_row["Solvent_SMILES_2"],
+            "SOLV_PARAM_s_g": matching_row["SOLV_PARAM_s_g"],
+            "SOLV_PARAM_b_g": matching_row["SOLV_PARAM_b_g"],
+            "SOLV_PARAM_e_g": matching_row["SOLV_PARAM_e_g"],
+            "SOLV_PARAM_l_g": matching_row["SOLV_PARAM_l_g"],
+            "SOLV_PARAM_a_g": matching_row["SOLV_PARAM_a_g"],
+            "SOLV_PARAM_c_g": matching_row["SOLV_PARAM_c_g"],
+            "SOLV_PARAM_visc at 298 K (cP)": matching_row["SOLV_PARAM_visc at 298 K (cP)"],
+            "SOLV_PARAM_dielectric constant": matching_row["SOLV_PARAM_dielectric constant"],
+        }
+
+        return solvent_data
+    
+    except:
+        print(f"There is no information on {solvent_name} in the solvent data file")
+        # if no experimental solvent data, return null
+        solvent_data = {
+            "Solvent": np.nan,
+            "Solvent_SMILES": np.nan,
+            "Solvent_SMILES_2": np.nan,
+            "SOLV_PARAM_s_g": np.nan,
+            "SOLV_PARAM_b_g": np.nan,
+            "SOLV_PARAM_e_g": np.nan,
+            "SOLV_PARAM_l_g": np.nan,
+            "SOLV_PARAM_a_g": np.nan,
+            "SOLV_PARAM_c_g": np.nan,
+            "SOLV_PARAM_visc at 298 K (cP)": np.nan,
+            "SOLV_PARAM_dielectric constant": np.nan,
+        }
+        return solvent_data

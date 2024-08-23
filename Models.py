@@ -27,7 +27,7 @@ import pandas as pd
 import numpy as np
 
 class runModels:
-    def __init__(self, infile_path, n_iter):
+    def __init__(self, infile_path, n_iter, target):
         self.n_iters = n_iter
         # infile path is path to imputed data file
         self.infile_path = infile_path
@@ -42,10 +42,20 @@ class runModels:
         # _y is just dH values
         self.data_frame_y = np.nan
 
+        self.target = np.nan
+
+        if target == "dH":
+            self.target = "dH (kJ/mol)"
+        else:
+            self.target = "dS (J/mol/K)"
+
     def main(self):
         self.createDataSets()
+        # print("------------- DATA SET SPLIT INTO 4 -------------")
         self.saveHyperParams()
+        print("------------- HYPER PARAMETERS SAVED -------------")
         self.runModels()
+        print("------------- MODEL RUNNING COMPLETE -------------")
 
     def createDataSets(self):
         '''
@@ -60,7 +70,7 @@ class runModels:
         self.imputed_df = self.imputed_df.drop(
             columns=[
                 "Solvent",
-                "Monomer_SMILES",
+                "Canonical_Monomer_SMILES",
                 "Solvent_SMILES",
                 "Solvent_SMILES_2",
                 "DP_0",
@@ -103,40 +113,53 @@ class runModels:
         # Create an empty dictionary to store data frames
         # _x does not include df
         self.data_frame_X = {
-            "1": X_full_with_solvent_params.drop(columns=['dH (kJ/mol)']),
-            "2": X_full.drop(columns=['dH (kJ/mol)']),
-            "3": X_solvent_only.drop(columns=['dH (kJ/mol)']),
-            "4": X_bulk_only.drop(columns=['dH (kJ/mol)']),
+            "1": X_full_with_solvent_params.drop(columns=[self.target]),
+            "2": X_full.drop(columns=[self.target]),
+            "3": X_solvent_only.drop(columns=[self.target]),
+            "4": X_bulk_only.drop(columns=[self.target]),
         }
 
-        # _y is just dH values
+        # _y is just dS values
         self.data_frame_y = {
-            "1": X_full_with_solvent_params['dH (kJ/mol)'],
-            "2": X_full['dH (kJ/mol)'],
-            "3": X_solvent_only['dH (kJ/mol)'],
-            "4": X_bulk_only['dH (kJ/mol)'],
+            "1": X_full_with_solvent_params[self.target],
+            "2": X_full[self.target],
+            "3": X_solvent_only[self.target],
+            "4": X_bulk_only[self.target],
         }
 
         # Save as csv just to have as a record
-        X_full_with_solvent_params.to_csv(self.base_path + "split_1.csv")
-        X_full.to_csv(self.base_path + "split_2.csv")
-        X_solvent_only.to_csv(self.base_path + "split_3.csv")
-        X_bulk_only.to_csv(self.base_path + "split_4.csv")
+        # Create the folder
+        split_path = self.base_path + "/splits/"
+        os.makedirs(split_path, exist_ok=True)
+        X_full_with_solvent_params.to_csv(split_path + "split_1.csv")
+        X_full.to_csv(split_path + "split_2.csv")
+        X_solvent_only.to_csv(split_path + "split_3.csv")
+        X_bulk_only.to_csv(split_path + "split_4.csv")
 
     def saveHyperParams(self):        
         # save params for set 1 / XGB model
         xgb_case_1 = self.saveHyperParamsHelper("1")
 
+        print("------- Case 1 Hyper Params Complete -------")
+
         # save params for set 2 / all models
         best_params_2 = self.saveHyperParamsHelper("2")
+
+        print("------- Case 2 Hyper Params complete -------")
 
         # save params for set 3 (solution phase only) / all models
         best_params_3 = self.saveHyperParamsHelper("3")
 
+        print("------- Case 3 Hyper Params complete -------")
+
         # save params for set 4 (bulk phase only) / all models
         best_params_4 = self.saveHyperParamsHelper("4")
 
+        print("------- Case 4 Hyper Params complete -------")
+
         final_param_list = [xgb_case_1] + best_params_2 + best_params_3 + best_params_4
+
+        print(f"------- Final params list: {final_param_list} -------")
                                                     
         # pickle it
         with open('hyperparameters.pkl', 'wb') as f:
@@ -144,6 +167,8 @@ class runModels:
 
     def runModels(self):
         # bring in parameters
+        print("------------- INSIDE RUNMODELS -------------")
+
         f = open("hyperparameters.pkl", "rb")
 
         (   best_params_xgb_case_1, best_params_xgb_case_2, best_params_xgb_case_3, best_params_xgb_case_4, 
@@ -154,11 +179,15 @@ class runModels:
         )  = pickle.load(f)
 
         f.close()
+        print("------------- PICKLE FILE OPENED -------------")
 
         # create model dicts setting it up with the params
         models_1 = {
             "XGB": xgb.XGBRegressor(**best_params_xgb_case_1),
         }
+
+        print("------------- MODEL 1 CREATED -------------")
+
 
         models_2 = {
             "XGB": xgb.XGBRegressor(**best_params_xgb_case_2),
@@ -169,6 +198,8 @@ class runModels:
             #  "NN": create_nn_model(),
         }
 
+        print("------------- MODEL 2 CREATED -------------")
+
         models_3 = {
             "XGB": xgb.XGBRegressor(**best_params_xgb_case_3),
             "SVR": SVR(**best_params_svr_case_3),
@@ -177,6 +208,8 @@ class runModels:
             "RF": RandomForestRegressor(**best_params_rf_case_3),
             #  "NN": create_nn_model(),
         }
+
+        print("------------- MODEL 3 CREATED -------------")
 
         models_4 = {
             "XGB": xgb.XGBRegressor(**best_params_xgb_case_4),
@@ -187,6 +220,7 @@ class runModels:
             #  "NN": create_nn_model(),
         }
 
+        print("------------- MODEL 4 CREATED -------------")
 
         model_mega_dict = {
             "1": models_1,
@@ -197,14 +231,20 @@ class runModels:
 
         # run models
         for key, value in model_mega_dict.items():
+            print(f"------------- RUNNING MODEL: {key}, {value} -------------")
+
             # Get dataframes
             X, y = self.data_frame_X[key], self.data_frame_y[key]
 
             # Loop through the
             model_dict = value
             for model_name, regressor in model_dict.items():
+                print(f"----- model name: {model_name},regressor: {regressor} -----")
+
                 self.train_test_model(model_name, regressor, key, X, y, "model_results", repetitions=200)
+                print("TRAIN TEST MODEL COMPLETE")
                 self.train_model_LOOCV(model_name, regressor, key, X, y, "model_results_LOOCV")
+                print("TRAIN MODEL LOOCV COMPLETE")
 
 # --------- Helper Functions --------- #
     def searchSpaceInit(self):
@@ -283,6 +323,7 @@ class runModels:
         return xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer
 
     def saveHyperParamsHelper(self, num_str):
+        print(f"------- inside params helper for {num_str} -------")
         xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer = self.optimizerInit()
 
         xgb_optimizer.fit(self.data_frame_X[num_str], self.data_frame_y[num_str])

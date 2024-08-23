@@ -19,12 +19,19 @@ class Polymerization:
             (dictionary): a dictionary with keys being dp and values being the smile string of the polymer
     '''
 
-    def __init__(self, monomer_smiles, poly_type,dp):
-
-        # This path will be used to fill in values that were done manually such as monomers that fall under base_state 'misc'
-        relative_path = "data/archive_data.csv"
+    def __init__(self, monomer_smiles, poly_type,dp, archive_path):
+        '''
+            Parameters: 
+                monomer_smiles (str): the canonical smiles string of the monomer
+                poly_type (str): the type of polymerization that the molecule undergoes
+                dp (int): the degree of polymerization that you would like to
+                archive_path (str): Path to featurized_archive. This path will be used to fill in values that were done manually such as monomers that fall under base_state 'misc'
+            
+            Output:
+                (dict): a dictionary containing degrees of polymerization for a monomer obtained from archive
+        '''
         # Turn the csv into a pandas array
-        self.archive_df = pd.read_csv(relative_path)
+        self.archive_df = pd.read_csv(archive_path)
 
         # Initiate the variables that will be used for polymerization
         self.dp = dp
@@ -233,9 +240,9 @@ class Polymerization:
                 None
             
             Output:
-                initiation (str): the initiation reaction string
-                propagation (str): the propagation reaction string
-                reaction_mechanism (str): a more descriptive title for the ROP that the monomer undergoes
+            updates self.rxn_mechanism, self.initiation_rxn_str and self.propagation_rxn_str
+            with a more descriptive title for the ROP that the monomer undergoes, the initiation reaction string
+            and the propagation reaction string
         '''
 
         monomer = Chem.MolFromSmiles(self.monomer_smiles)
@@ -349,7 +356,7 @@ class Polymerization:
                 keys(list): the keys to the dictionary that will be returned. the keys for the dict are the degrees of polymerization 
             
             Output:
-                None
+                (dict): a dictionary containing degrees of polymerization for a monomer obtained from archive
         '''
 
         # make dictionary to return
