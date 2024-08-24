@@ -80,7 +80,7 @@ def impute(infile_path, target):
 
         Parameters:
             infile_path (str): the path to the dataset that you want to impute
-            target (str): dH for enthalpy or dS for entropy. Used to indicate what columns we impute
+            target (str): enthalpy ("dH (kJ/mol)") or entropy ("dS (J/mol/K)")
 
         Output:
             saves a .csv file starting with imputed_
@@ -184,7 +184,7 @@ def main(infile_path, target):
 
         Parameters:
             infile_path (str): the path to the dataset that you want to impute, one-hot encode and clean RDKIT columns
-            target (str): dH for enthalpy or dS for entropy. Used to indicate what columns we impute
+            target (str): enthalpy ("dH (kJ/mol)") or entropy ("dS (J/mol/K)")
 
         Output:
             saves a .csv file starting with cleaned_encoded_imputed

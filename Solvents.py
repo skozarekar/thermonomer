@@ -6,40 +6,52 @@ import re
 from rdkit import Chem
 import os
 
-# https://depts.washington.edu/eooptic/linkfiles/dielectric_chart%5B1%5D.pdf
-
 class SolventData():
-    def __init__(self,infile_path):
+    '''
+        class SolventData: 
+            A class that contains functions for obtaining solvent experimental data from rmg.mit and a dielectric table from the University of Washington.
+
+            There are two main ways to use this class:
+                1. Pass in the path to a csv of solvent names to main(self,infile_path) and get a csv of solvent experimental data
+                2. Pass in a solvent to getSolventData(self,solvent_name) and a get dicitonary of that solvent's experimental data
+
+        Parameters for initiation: 
+            monomer_smiles (str): the path to dielectric.csv which contains solvent dielectric constants from University of Washington
+
+    '''
+    def __init__(self,dielectric_filepath):
+        # The only thing the user needs to initiate when using this class is the filepath to the dielectric values form University of Washington. 
+        # https://depts.washington.edu/eooptic/linkfiles/dielectric_chart%5B1%5D.pdf
+        self.dielectric_df = pd.read_csv(dielectric_filepath, index_col=0, encoding="utf-8")
+
+    def main(self, infile_path):
+        '''
+            a function that executes retrieving data from the website for rows that have experimental data missing. 
+
+            Parameters:
+                None
+                
+            Output:
+                saves a new .csv containing the experimental data of the solvents in the original .csv
+        '''
         self.infile_path = infile_path
 
         filename = os.path.splitext(os.path.basename(infile_path))[0]
         directory_path = os.path.dirname(infile_path)
 
         updated_filename = "updated_" +  filename + ".csv"
-        dielectric_filepath = directory_path + "/dielectric.csv"
 
         self.updated_path = directory_path + "/" + updated_filename
 
-        # Read df
         self.df = pd.read_csv(self.infile_path, index_col=0, encoding="utf-8")
-        self.dielectric_df = pd.read_csv(dielectric_filepath, index_col=0, encoding="utf-8")
         self.update_df = self.df
 
-    def main(self):
-        '''
-            a function that executes retrieving data from the website for rows that have experimental data missing. 
-
-            Parameters:
-                None
-            Output:
-                None        
-        '''
         # find the columns with cells that need to be imputed
         for _, row in self.df.iterrows():
             assert pd.notna(row["Solvent"]) 
             if pd.isna(row["SOLV_PARAM_s_g"]): # check if expeirmental data is missing
                 # If empty, experimental solvent data has not been filled in yet
-                to_match = self.solvationHelper(row["Solvent"])
+                to_match = self.getSolventData(row["Solvent"])
                 if pd.notna(to_match):
                     # if experimental data was sraped, remove the current row of the solvent that has np.nan values
                     self.update_df = self.update_df[self.update_df["Solvent"] != row["Solvent"]]
@@ -50,9 +62,9 @@ class SolventData():
                     # Save the DataFrame
                     self.saveDf()
 
-    def solvationHelper(self, solvent_name):
+    def getSolventData(self, solvent_name):
         '''
-            a function that retrieves solvent experimental data from a website
+            a function that retrieves solvent experimental data from rmg.mit
 
             Parameters:
                 solvent_name (str): the name of the solvent
@@ -121,8 +133,13 @@ class SolventData():
 
             if pd.isna(val_list[15]):
                 # check to see if the dielectric constant is in dielectric.csv if it was not scraped from the website
-                self.dielectric_df
-                
+                matching_row = self.dielectric_df[self.dielectric_df["Solvent"].str.replace(' ', '').str.lower() == solvent_name.replace(' ', '').lower()]
+                if matching_row.empty:
+                    print(f"No dielectric constant could be found for {solvent_name}. Please fill in manually.")
+                else:
+                    print(f"Dielectric constant for {solvent_name} found in University of Washington's dielectric chart.")
+                    val_list[15] =float(matching_row["dielectric_constant"].values[0])
+
             solvent_data = {
                 "Solvent": solvent_name,
                 "Solvent_SMILES": canonical_smiles,
