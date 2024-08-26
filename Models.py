@@ -223,10 +223,12 @@ def train_model_LOOCV(model_name, regressor, X, y):
             y_train, y_test = y.iloc[train_index], y.iloc[test_index]      
 
         # Fit your regressor on the training data
-        if model_name == "NN":
-            regressor.fit(X_train, y_train, epochs=10, batch_size=10, verbose=0)
-        else:
-            regressor.fit(X_train, y_train.values.ravel())
+        # if model_name == "NN":
+        #     regressor.fit(X_train, y_train, epochs=10, batch_size=10, verbose=0)
+        # else:
+        regressor.fit(X_train, y_train.values.ravel())
+
+        features_df = getFeatureRanking(X_train, regressor, model_name, y = y_train)
 
         # Make predictions on the test data
         y_pred = regressor.predict(X_test)
@@ -249,7 +251,7 @@ def train_model_LOOCV(model_name, regressor, X, y):
     
     print(f"TRAIN {model_name} COMPLETE")
 
-    return output_dict
+    return output_dict, features_df
 
 def train_test_model(model_name, regressor, X, y, repetitions=200):
     '''
@@ -287,12 +289,14 @@ def train_test_model(model_name, regressor, X, y, repetitions=200):
             X_test_scaled = scaler.transform(X_test)
 
         # Fit your regressor on the training data
-        if model_name == "NN":
-            regressor.fit(X_train_scaled, y_train, epochs=10, batch_size=10, verbose=0)
-        elif model_name == "RF":
+        # if model_name == "NN":
+        #     regressor.fit(X_train_scaled, y_train, epochs=10, batch_size=10, verbose=0)
+        if model_name == "RF":
             regressor.fit(X_train, y_train.values.ravel())
         else:
             regressor.fit(X_train_scaled, y_train.values.ravel())
+
+        features_df = getFeatureRanking(X_train, regressor, model_name, y = y_train)
 
         # Make predictions on the test data
         # how does it do on data it hasn't seen. best measure of how good it is
@@ -339,8 +343,43 @@ def train_test_model(model_name, regressor, X, y, repetitions=200):
 
     print(f"TRAIN {model_name} LOOCV COMPLETE")
 
-    return output_dict
+    return output_dict, features_df
                 
+def getFeatureRanking(X, model, model_name, y=np.nan, num_iterations = 100):
+    # a list of the feature names
+    feature_names = pd.DataFrame(X).columns.tolist()
+
+    # if model_name != "XGB" or model_name != "RF":
+    #     # Initialize SelectKBest with mutual information scoring
+    #     selector = SelectKBest(score_func=mutual_info_regression, k=50)
+    #     # Fit selector and transform X
+    #     selector.fit(X, y)
+    #     # Get scores for each feature
+    #     feature_scores = selector.scores_
+    #     feature_score_dict = dict(zip(feature_names, feature_scores))
+    #     feature_score_df = pd.DataFrame(feature_score_dict)
+    #     return feature_score_df
+
+    if model_name == "XGB":
+
+        # Get feature importances
+        importances = model.feature_importances_
+
+        # Create a DataFrame to hold feature names and their importances
+        feature_importance_df = pd.DataFrame({
+            "Feature": feature_names,
+            "Importance": importances
+        })
+
+        # Sort the DataFrame by importance
+        sorted_df = feature_importance_df.sort_values(by='Importance', ascending=False)
+        # Print top ten features:
+        # sorted_df.head(10)
+
+        return sorted_df
+
+    else: #return empty df
+        return pd.DataFrame()
 # -------------- MAIN FUNCTIONS -------------- #
 def getXy(infile_path, target):
     '''
@@ -549,7 +588,7 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
     for model_name, regressor in regressor_dict.items():
         print(f"RUNNING {model_name}")
 
-        ttest_output = train_test_model(model_name, regressor, X, y, repetitions=200)
+        ttest_output, ttest_features_df = train_test_model(model_name, regressor, X, y, repetitions=200)
 
         # save model data output 
         ttest_df = pd.DataFrame(ttest_output)
@@ -557,15 +596,19 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
             # Check if an output folder exist if not make one
             os.makedirs("model_results/")
         ttest_df.to_csv(f"model_results/{model_name}_{uniq_id}.csv")
+        if not ttest_features_df.empty:
+            ttest_features_df.to_csv(f"model_results/{model_name}_{uniq_id}_featureRanks.csv")
 
-        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y)
+        t_LOOCV_output, t_LOOCV_features_df = train_model_LOOCV(model_name, regressor, X, y)
         
         t_LOOCV_df = pd.DataFrame(t_LOOCV_output)
         if not os.path.exists("model_results_LOOCV/"):
             os.makedirs("model_results_LOOCV/")
         t_LOOCV_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}.csv")
+        if not ttest_features_df.empty:
+            t_LOOCV_features_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}_featureRanks.csv")
 
-def main(infile_path, n_iters, target):
+def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True):
     '''
         A function that takes in a dataset and runs models on four unique datasets that are subsets of the original set. 
         Results are saved in .csv files. 
@@ -587,33 +630,45 @@ def main(infile_path, n_iters, target):
     print("    3: Solvents only (with solvent parameters)")
     print("    4: Bulk only")
 
-    hyperparam_dicts = splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict)
+    if get_hyperparams:
+        hyperparam_dicts = splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict)
+    else:
+        with open('hyperparams.pkl', 'rb') as file:
+            hyperparam_dicts = pickle.load(file)
+
     h_1 = hyperparam_dicts["1"]
     h_2 = hyperparam_dicts["2"]
     h_3 = hyperparam_dicts["3"]
     h_4 = hyperparam_dicts["4"]
 
-    # create model dicts setting it up with the params
-    models_1 = {
-        "XGB": xgb.XGBRegressor(**h_1["XGB"]),
-    }
-    print("MODELS FOR DATASET 1 CREATED")
+    if get_models:
+        # create model dicts setting it up with the params
+        models_1 = {
+            "XGB": xgb.XGBRegressor(**h_1["XGB"]),
+        }
+        print("MODELS FOR DATASET 1 CREATED")
 
-    models_2 = initModelRegressors(h_2)
-    print("MODELS FOR DATASET 2 CREATED")
+        models_2 = initModelRegressors(h_2)
+        print("MODELS FOR DATASET 2 CREATED")
 
-    models_3 = initModelRegressors(h_3)
-    print("MODELS FOR DATASET 3 CREATED")
+        models_3 = initModelRegressors(h_3)
+        print("MODELS FOR DATASET 3 CREATED")
 
-    models_4 = initModelRegressors(h_4)
-    print("MODELS FOR DATASET 4 CREATED")
+        models_4 = initModelRegressors(h_4)
+        print("MODELS FOR DATASET 4 CREATED")
 
-    model_mega_dict = {
-        "1": models_1,
-        "2": models_2,
-        "3": models_3,
-        "4": models_4,
-    }
+        model_mega_dict = {
+            "1": models_1,
+            "2": models_2,
+            "3": models_3,
+            "4": models_4,
+        }
+
+        with open('models.pkl', 'wb') as file:
+            pickle.dump(model_mega_dict, file)
+    else:
+        with open('models.pkl', 'rb') as file:
+            model_mega_dict = pickle.load(file)
 
     # run models
     for key, value in model_mega_dict.items():
