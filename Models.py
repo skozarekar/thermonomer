@@ -41,8 +41,8 @@ def searchSpaceInit():
     # Define parameter space for XGB
     xgb_param_space = {'learning_rate': (0.01, 0.3),
                 'n_estimators': (100, 300),
-                'max_depth': (3, 9),
-                'min_child_weight': (1, 5),
+                'max_depth': (3, 5),
+                'min_child_weight': (1, 10),
                 'subsample': (0.6, 1.0),
                 'colsample_bytree': (0.6, 1.0),
                 'gamma': (0, 0.3),
@@ -122,7 +122,7 @@ def optimizerInit(n_iters):
     
     return xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer
 
-def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict):
+def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = False):
     '''
         Obtains and saves the hyperparameters for each model and dataset pair. Calls getHyperparams.
 
@@ -143,19 +143,19 @@ def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict):
     }
 
     # save params for set 1 / XGB model
-    xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = True)
+    xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = xgb_only)
     print("Dataset 1 Hyperparameters Complete")
 
     # save params for set 2 / all models
-    best_params_2 = getHyperparams(n_iters, x_df_dict["2"], y_df_dict["2"])
+    best_params_2 = getHyperparams(n_iters, x_df_dict["2"], y_df_dict["2"], xgb_only = xgb_only)
     print("Dataset 2 Hyperparameters complete")
 
     # save params for set 3 (solution phase only) / all models
-    best_params_3 = getHyperparams(n_iters, x_df_dict["3"], y_df_dict["3"])
+    best_params_3 = getHyperparams(n_iters, x_df_dict["3"], y_df_dict["3"], xgb_only = xgb_only)
     print("Dataset 3 Hyperparameters complete")
 
     # save params for set 4 (bulk phase only) / all models
-    best_params_4 = getHyperparams(n_iters, x_df_dict["4"], y_df_dict["4"])
+    best_params_4 = getHyperparams(n_iters, x_df_dict["4"], y_df_dict["4"], xgb_only = xgb_only)
     print("Dataset 4 Hyperparameters complete")
 
     hyperparams = {
@@ -228,8 +228,6 @@ def train_model_LOOCV(model_name, regressor, X, y):
         # else:
         regressor.fit(X_train, y_train.values.ravel())
 
-        features_df = getFeatureRanking(X_train, regressor, model_name, y = y_train)
-
         # Make predictions on the test data
         y_pred = regressor.predict(X_test)
 
@@ -251,7 +249,7 @@ def train_model_LOOCV(model_name, regressor, X, y):
     
     print(f"TRAIN {model_name} COMPLETE")
 
-    return output_dict, features_df
+    return output_dict
 
 def train_test_model(model_name, regressor, X, y, repetitions=200):
     '''
@@ -295,8 +293,6 @@ def train_test_model(model_name, regressor, X, y, repetitions=200):
             regressor.fit(X_train, y_train.values.ravel())
         else:
             regressor.fit(X_train_scaled, y_train.values.ravel())
-
-        features_df = getFeatureRanking(X_train, regressor, model_name, y = y_train)
 
         # Make predictions on the test data
         # how does it do on data it hasn't seen. best measure of how good it is
@@ -343,9 +339,9 @@ def train_test_model(model_name, regressor, X, y, repetitions=200):
 
     print(f"TRAIN {model_name} LOOCV COMPLETE")
 
-    return output_dict, features_df
+    return output_dict
                 
-def getFeatureRanking(X, model, model_name, y=np.nan, num_iterations = 100):
+def getFeatureRanking(X, model, model_name, y, num_iterations = 100):
     # a list of the feature names
     feature_names = pd.DataFrame(X).columns.tolist()
 
@@ -361,9 +357,10 @@ def getFeatureRanking(X, model, model_name, y=np.nan, num_iterations = 100):
     #     return feature_score_df
 
     if model_name == "XGB":
-
-        # Get feature importances
-        importances = model.feature_importances_
+        for _ in range(num_iterations):
+            model.fit(X,y)
+            # Get feature importances
+            importances = model.feature_importances_
 
         # Create a DataFrame to hold feature names and their importances
         feature_importance_df = pd.DataFrame({
@@ -588,7 +585,7 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
     for model_name, regressor in regressor_dict.items():
         print(f"RUNNING {model_name}")
 
-        ttest_output, ttest_features_df = train_test_model(model_name, regressor, X, y, repetitions=200)
+        ttest_output = train_test_model(model_name, regressor, X, y, repetitions=200)
 
         # save model data output 
         ttest_df = pd.DataFrame(ttest_output)
@@ -596,19 +593,19 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
             # Check if an output folder exist if not make one
             os.makedirs("model_results/")
         ttest_df.to_csv(f"model_results/{model_name}_{uniq_id}.csv")
-        if not ttest_features_df.empty:
-            ttest_features_df.to_csv(f"model_results/{model_name}_{uniq_id}_featureRanks.csv")
+        # if not ttest_features_df.empty:
+        #     ttest_features_df.to_csv(f"model_results/{model_name}_{uniq_id}_featureRanks.csv")
 
-        t_LOOCV_output, t_LOOCV_features_df = train_model_LOOCV(model_name, regressor, X, y)
+        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y)
         
         t_LOOCV_df = pd.DataFrame(t_LOOCV_output)
         if not os.path.exists("model_results_LOOCV/"):
             os.makedirs("model_results_LOOCV/")
         t_LOOCV_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}.csv")
-        if not ttest_features_df.empty:
-            t_LOOCV_features_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}_featureRanks.csv")
+        # if not ttest_features_df.empty:
+        #     t_LOOCV_features_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}_featureRanks.csv")
 
-def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True):
+def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True, XGB_only = False):
     '''
         A function that takes in a dataset and runs models on four unique datasets that are subsets of the original set. 
         Results are saved in .csv files. 
@@ -631,7 +628,7 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
     print("    4: Bulk only")
 
     if get_hyperparams:
-        hyperparam_dicts = splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict)
+        hyperparam_dicts = splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = XGB_only)
     else:
         with open('hyperparams.pkl', 'rb') as file:
             hyperparam_dicts = pickle.load(file)
@@ -642,20 +639,44 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
     h_4 = hyperparam_dicts["4"]
 
     if get_models:
-        # create model dicts setting it up with the params
-        models_1 = {
-            "XGB": xgb.XGBRegressor(**h_1["XGB"]),
-        }
-        print("MODELS FOR DATASET 1 CREATED")
+        if XGB_only:
+            # create model dicts setting it up with the params
+            models_1 = {
+                "XGB": xgb.XGBRegressor(**h_1["XGB"]),
+            }
+            print("MODELS FOR DATASET 1 CREATED")
 
-        models_2 = initModelRegressors(h_2)
-        print("MODELS FOR DATASET 2 CREATED")
+            models_2 = {
+                "XGB": xgb.XGBRegressor(**h_2["XGB"]),
+            }
 
-        models_3 = initModelRegressors(h_3)
-        print("MODELS FOR DATASET 3 CREATED")
+            print("MODELS FOR DATASET 2 CREATED")
 
-        models_4 = initModelRegressors(h_4)
-        print("MODELS FOR DATASET 4 CREATED")
+            models_3 = {
+                "XGB": xgb.XGBRegressor(**h_3["XGB"]),
+            }
+
+            print("MODELS FOR DATASET 3 CREATED")
+
+            models_4 = {
+                "XGB": xgb.XGBRegressor(**h_4["XGB"]),
+            }
+
+            print("MODELS FOR DATASET 4 CREATED")
+        else: 
+            models_1 = {
+                "XGB": xgb.XGBRegressor(**h_1["XGB"]),
+            }
+            print("MODELS FOR DATASET 1 CREATED")
+
+            models_2 = initModelRegressors(h_2)
+            print("MODELS FOR DATASET 2 CREATED")
+
+            models_3 = initModelRegressors(h_3)
+            print("MODELS FOR DATASET 3 CREATED")
+
+            models_4 = initModelRegressors(h_4)
+            print("MODELS FOR DATASET 4 CREATED")
 
         model_mega_dict = {
             "1": models_1,
@@ -664,9 +685,11 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
             "4": models_4,
         }
 
+        # Store in pickle file
         with open('models.pkl', 'wb') as file:
             pickle.dump(model_mega_dict, file)
     else:
+        # Open the store dictionary of models 
         with open('models.pkl', 'rb') as file:
             model_mega_dict = pickle.load(file)
 
@@ -679,7 +702,62 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
 
         # dictionary with keys for each model and values the corresponding regressor function
         regressor_dict = value
+
+        features_df = XGBtopFeatures(X, y, regressor_dict["XGB"])
+        parent_directory = os.path.dirname(os.path.dirname(infile_path)) + "/"
+
+        if not os.path.exists(parent_directory + "final_results"):
+            # Check if an output folder exist if not make one
+            os.makedirs(parent_directory + "final_results")
+
+        final_feat_path = parent_directory + "final_results/feature_ranking_" + key + ".csv"
+
+        features_df.to_csv(final_feat_path, index = False)
+
         runModels(regressor_dict, X, y, uniq_id = key)
 
     print("OPERATION COMPLETE :)")
 
+def XGBtopFeatures(X, y, model):
+    # Number of iterations
+    num_iterations = 100
+    # Number of top features to select
+    num_top_features = 50
+    # Initialize dictionary to store feature counts
+    feature_counts = {feature: 0 for feature in X.columns}
+    # Initialize array to store feature importances
+    feature_importances_sum = np.zeros(len(X.columns))
+
+    for _ in range(num_iterations):
+        model.fit(X, y)
+
+        # Get feature importances
+        feature_importances = model.feature_importances_
+
+        # Sum up feature importances
+        feature_importances_sum += feature_importances
+
+        # Sort feature importances and select the top features
+        top_indices = np.argsort(feature_importances)[::-1][:num_top_features]
+        top_features = X.columns[top_indices]
+
+        # Update feature counts
+        for feature in top_features:
+            feature_counts[feature] += 1
+
+    # Sort features by their counts
+    sorted_features = sorted(feature_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # Store top features and their importances for the current case
+    top_features_importances = [(feature, feature_importances_sum[idx] / num_iterations) for feature, idx in zip(sorted_features[:num_top_features], top_indices)]
+
+    output_df = pd.DataFrame(columns=["FEATURE NAME", "IMPORTANCE"])
+
+    for sorted_feature, importance in top_features_importances:
+        new_row = {"FEATURE NAME": sorted_feature[0],
+                            "IMPORTANCE": importance
+                            }
+        # Add the new row
+        output_df.loc[len(output_df)] = new_row
+
+    return output_df
