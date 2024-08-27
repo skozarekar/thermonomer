@@ -70,7 +70,7 @@ def searchSpaceInit():
 
     return xgb_param_space, rf_param_space, svr_param_space,kr_param_space, gp_param_space
 
-def optimizerInit(n_iters):
+def optimizerInit(n_iters, bayes_search = True):
     '''
         This function uses the search spaces obtained from searchSpaceInit() to get the optimizers for each model
 
@@ -83,42 +83,79 @@ def optimizerInit(n_iters):
 
     xgb_param_space, rf_param_space, svr_param_space,kr_param_space, gp_param_space = searchSpaceInit()
 
-    # Initialize BayesSearchCV for each model: optimize paramters for 12hr / test Dataset
-    ### baysian search replace with something else. grid search cv maybe. bayes search doesn't need to be this specifically look into other options
-    # grid search?
-    xgb_optimizer = BayesSearchCV(estimator=xgb.XGBRegressor(),
-                    search_spaces=xgb_param_space,
-                    n_iter=n_iters,
-                    cv=5,
-                    random_state=42)
+    if bayes_search:
 
-    rf_optimizer = BayesSearchCV(estimator=RandomForestRegressor(),
-                                search_spaces=rf_param_space,
-                                n_iter=n_iters,
-                                cv=5,
-                                random_state=42,
-                                n_jobs=-1)
+        # Initialize BayesSearchCV for each model: optimize paramters for 12hr / test Dataset
+        ### baysian search replace with something else. grid search cv maybe. bayes search doesn't need to be this specifically look into other options
+        # grid search?
+        xgb_optimizer = BayesSearchCV(estimator=xgb.XGBRegressor(),
+                        search_spaces=xgb_param_space,
+                        n_iter=n_iters,
+                        cv=5,
+                        random_state=42)
 
-    svr_optimizer = BayesSearchCV(estimator=SVR(),
-                                search_spaces=svr_param_space,
-                                n_iter=n_iters,
-                                cv=5,
-                                random_state=42,
-                                n_jobs=-1)
+        rf_optimizer = BayesSearchCV(estimator=RandomForestRegressor(),
+                                    search_spaces=rf_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
 
-    kr_optimizer = BayesSearchCV(estimator=KernelRidge(),
-                                search_spaces=kr_param_space,
-                                n_iter=n_iters,
-                                cv=5,
-                                random_state=42,
-                                n_jobs=-1)
+        svr_optimizer = BayesSearchCV(estimator=SVR(),
+                                    search_spaces=svr_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
 
-    gp_optimizer = BayesSearchCV(estimator=GaussianProcessRegressor(kernel=RBF()),
-                                search_spaces=gp_param_space,
-                                n_iter=n_iters,
-                                cv=5,
-                                random_state=42,
-                                n_jobs=-1)
+        kr_optimizer = BayesSearchCV(estimator=KernelRidge(),
+                                    search_spaces=kr_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
+
+        gp_optimizer = BayesSearchCV(estimator=GaussianProcessRegressor(kernel=RBF()),
+                                    search_spaces=gp_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
+    
+    else:
+        xgb_optimizer = GridSearchCV(estimator=xgb.XGBRegressor(),
+                        search_spaces=xgb_param_space,
+                        n_iter=n_iters,
+                        cv=5,
+                        random_state=42)
+
+        rf_optimizer = GridSearchCV(estimator=RandomForestRegressor(),
+                                    search_spaces=rf_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
+
+        svr_optimizer = GridSearchCV(estimator=SVR(),
+                                    search_spaces=svr_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
+
+        kr_optimizer = GridSearchCV(estimator=KernelRidge(),
+                                    search_spaces=kr_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
+
+        gp_optimizer = GridSearchCV(estimator=GaussianProcessRegressor(kernel=RBF()),
+                                    search_spaces=gp_param_space,
+                                    n_iter=n_iters,
+                                    cv=5,
+                                    random_state=42,
+                                    n_jobs=-1)
     
     return xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer
 
@@ -507,7 +544,7 @@ def getHyperparams(n_iters, x_df, y_df, xgb_only = False):
             (dict): a dicitonary of the hyperparams for each model
     '''
 
-    xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer = optimizerInit(n_iters)
+    xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer = optimizerInit(n_iters, bayes_search=False)
 
     xgb_optimizer.fit(x_df, y_df)
     best_params_xgb = xgb_optimizer.best_params_
@@ -718,11 +755,7 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
 
     print("OPERATION COMPLETE :)")
 
-def XGBtopFeatures(X, y, model):
-    # Number of iterations
-    num_iterations = 100
-    # Number of top features to select
-    num_top_features = 50
+def XGBtopFeatures(X, y, model, num_iterations = 100, num_top_features = 50):
     # Initialize dictionary to store feature counts
     feature_counts = {feature: 0 for feature in X.columns}
     # Initialize array to store feature importances

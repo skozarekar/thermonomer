@@ -84,7 +84,7 @@ repeat_rxn_dict = {
     "cyclic": repeat_cyclic,
 }
 
-def getRepeatUnit(monomer_smiles, polymerization_type):
+def getRepeatUnit(monomer_smiles, polymerization_type, relative_path= "data archive/featurized_archive.csv"):
     '''
         A function that gets the monomer repeat unit 
 
@@ -100,7 +100,6 @@ def getRepeatUnit(monomer_smiles, polymerization_type):
     monomer = MolFromSmiles(monomer_smiles)
 
     try:
-        relative_path = "data archive/featurized_archive.csv"
         # Turn the csv into a pandas array
         archive_df = pd.read_csv(relative_path)
 
@@ -495,7 +494,7 @@ def getDipoles(monomer_smiles):
 
     return dipoles
 
-def getSolventFeatures(monomer_smiles, monomer_base_state, archive_path, solvent_smiles = "NA"):
+def getSolventFeatures(monomer_smiles, monomer_base_state, solvent_smiles = "NA", archive_path = "data archive/featurized_archive.csv"):
     '''
         A function that returns the solvent features for a monomer
 
@@ -560,7 +559,7 @@ def getSolventFeatures(monomer_smiles, monomer_base_state, archive_path, solvent
     
     return solvent_data
 
-def getSoluteFeatures(monomer_smiles, archive_path):
+def getSoluteFeatures(monomer_smiles, archive_path = "data archive/featurized_archive.csv"):
     '''
         A function that returns solute features for a specific monomer
 
@@ -832,7 +831,7 @@ def getNumStereocenters(monomer_smiles, polymerization_type):
     p_stereos = FindPotentialStereo(mol)
     return len(p_stereos)
 
-def getExperimentalSolvent(solvent_name, solvent_path):
+def getExperimentalSolvent(solvent_name, solvent_path="data archive/solvents_archive.csv"):
     '''
         A function that retrieves the experimental solvent data in solvent_archive
 
@@ -902,3 +901,52 @@ def getExperimentalSolvent(solvent_name, solvent_path):
             "SOLV_PARAM_dielectric constant": np.nan,
         }
         return solvent_data
+
+def main(infile_path, target, dp):
+    # This function takes around 5 minutes to run
+    # target is dS (J/mol/K) or dH (KJ/mol)
+    filename = os.path.splitext(os.path.basename(infile_path))[0]
+    directory_path = os.path.dirname(infile_path)
+
+    new_file_name = "featurized_" +  filename + ".csv"
+    featurized_path = directory_path + "/" + new_file_name
+
+    # turn .csv into a pandas dataframe
+    unfeaturized_df = pd.read_csv(infile_path, index_col=0, encoding="utf-8")
+
+    for index,row in unfeaturized_df.iterrows():
+        #  get the parameter data
+        canonical_monomer_smiles = row["Canonical SMILES"]
+        print(f"Featurizing {canonical_monomer_smiles}")
+
+        #  get the monomer and polymer base states
+        base_state = row["BASE_State"]
+        monomer_base_state_col = base_state[0]
+        poly_base_state_col = base_state[1:]
+
+        # get the parameters that will go into getAllFeatures
+        solvent_name = row["Solvent"]
+        # print(solvent_name)
+        monomer_base_state = monomer_base_state_col
+        polymerization_type = row["BASE_Category"]
+
+        update_dict = getAllFeatures(canonical_monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name, target)
+        if target == "dH":
+            update_dict["dH (KJ/mol)"] = row["dH (KJ/mol)"]
+        else:
+            update_dict["dS (J/mol/K)"] = row["dS (J/mol/K)"]
+
+        update_dict["BASE_Polymer_State"] = poly_base_state_col
+
+        if index ==0:
+            featurized_df = pd.DataFrame([update_dict])
+            featurized_df.to_csv(featurized_path, encoding='utf-8-sig')
+
+        # Update the DataFrame containing featurized data
+        featurized_df.loc[len(featurized_df)] = update_dict
+
+        # Update the csv by overwriting latest version
+        featurized_df.to_csv(featurized_path, encoding='utf-8-sig')
+
+    print("OPERATION COMPLETE :)")
+

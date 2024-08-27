@@ -19,7 +19,7 @@ class Polymerization:
             (dictionary): a dictionary with keys being dp and values being the smile string of the polymer
     '''
 
-    def __init__(self, monomer_smiles, poly_type,dp, archive_path):
+    def __init__(self, monomer_smiles, poly_type,dp, archive_path="data archive/featurized_archive.csv"):
         '''
             Parameters: 
                 monomer_smiles (str): the canonical smiles string of the monomer

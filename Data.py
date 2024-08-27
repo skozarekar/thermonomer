@@ -105,7 +105,7 @@ def graphExpPred(infile_path):
     # colors = ["#5c3c8b", "#92c36d", "#ee9432", "#496391", "#85a5cd"]
     # cases 1/2, 3, 4, 5
 
-def graphFeatureRanking(infile_path):
+def graphFeatureRanking(infile_path, num_feat):
     feature_df = pd.read_csv(infile_path)
     parent_directory = os.path.dirname(infile_path) + "/"
     id = os.path.basename(infile_path).split(".")[0].split("_")[2]
@@ -118,10 +118,10 @@ def graphFeatureRanking(infile_path):
         top_features.append(row["FEATURE NAME"])
         importances.append(row["IMPORTANCE"])
 
-    plt.barh(top_features[:10], importances[:10], color='#85a5cd',)
+    plt.barh(top_features[:num_feat], importances[:num_feat], color='#85a5cd',)
     plt.xlabel('Feature Importance', fontdict={'fontname': 'Times New Roman'})
     plt.ylabel('Feature', fontdict={'fontname': 'Times New Roman'})
-    plt.title(f'Top 10 Features, Case {id}', fontdict={'fontname': 'Times New Roman'})
+    plt.title(f'Top {num_feat} Features, Case {id}', fontdict={'fontname': 'Times New Roman'})
     plt.gca().invert_yaxis()  # Invert y-axis to have the highest importance at the top
 
     plt.xticks(fontname='Times New Roman')

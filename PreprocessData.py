@@ -122,6 +122,9 @@ def impute(infile_path, target):
                 if best_score > 0:
                     df.loc[idx, col] = best_val
     df.to_csv(final_path, encoding="utf-8")
+    print("Imputing Complete")
+
+    return final_path
 
 # What is left to do:
 def oneHotEncode(infile_path):
@@ -147,6 +150,8 @@ def oneHotEncode(infile_path):
     df.to_csv(encoded_path, encoding="utf-8")
 
     # self.df.drop(columns=['BASE_State'], inplace=True)
+    print("One-hot Encoding Complete")
+    return encoded_path
 
 def cleanRDKIT(infile_path):
     '''
@@ -176,6 +181,8 @@ def cleanRDKIT(infile_path):
     df = df.drop(columns=columns_to_remove)
     print(f"Columns removed: {columns_to_remove}")
     df.to_csv(cleaned_path, encoding="utf-8")
+    print("RDKIT Feature Cleaning Complete")
+    return cleaned_path
 
 def main(infile_path, target):
     '''
@@ -201,12 +208,9 @@ def main(infile_path, target):
 
     # find the columns with cells that need to be imputed
     impute(infile_path, target)
-    print("Imputing Complete")
 
     oneHotEncode(imputed_path)
-    print("One-hot Encoding Complete")
     
     cleanRDKIT(encoded_path)
-    print("RDKIT Parameter Cleaning Complete")
 
     print("ALL OPERATIONS COMPLETE :)")
