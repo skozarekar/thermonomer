@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt 
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 
-def summarizeTrainTestResults(infile_path):
+def summarizeTrainTestResults(infile_path, target):
     # Get a list of all files in the directory  
     file_list = os.listdir(infile_path)
     parent_directory = os.path.dirname(infile_path) + "/"
@@ -17,20 +17,25 @@ def summarizeTrainTestResults(infile_path):
     final_path = parent_directory + "final_results/" + "trainTest_summary.csv"
 
     csv_files = [file for file in file_list]
+
+    units = "(kcal/mol)"
+    if target == "dS (J/mol/K)":
+        units = "(kcal/mol/K)"
+
     # Read each CSV file into a pandas DataFrame and store it in the dictionary
     for file in csv_files:
         df = pd.read_csv(infile_path + "/" + file)
         # Create an empty DataFrame with the specified columns
         new_row = {"FILE NAME": file,
-                       "AVG TRAIN ERROR (kcal/mol)": np.average(df['Train Error per Iteration (kcal/mol)']),
-                       "AVG TEST ERROR (kcal/mol)": np.average(df['Test Error per Iteration (kcal/mol)'])
+                       f"AVG TRAIN ERROR ({units})": np.average(df['Train Error per Iteration (kcal/mol)']),
+                       f"AVG TEST ERROR ({units})": np.average(df['Test Error per Iteration (kcal/mol)'])
                        }
         # Add the new row
         output_df.loc[len(output_df)] = new_row
 
     output_df.to_csv(final_path, index = False)
 
-def summarizeLOOCVResults(infile_path):
+def summarizeLOOCVResults(infile_path, target):
     # Get a list of all files in the directory  
     file_list = os.listdir(infile_path)
     parent_directory = os.path.dirname(infile_path) + "/"
@@ -44,27 +49,35 @@ def summarizeLOOCVResults(infile_path):
 
     csv_files = [file for file in file_list]
 
+    units = "kcal/mol"
+    if target == "dS (J/mol/K)":
+        units = "kcal/mol/K"
+
     # Read each CSV file into a pandas DataFrame and store it in the dictionary
     for file in csv_files:
         df = pd.read_csv(infile_path + "/" + file)
 
         # Calc RMSE
-        rmse = np.sqrt(mean_squared_error(df['Experimental Val (kcal/mol)'], df['Predicted Val (kcal/mol)']))
+        rmse = np.sqrt(mean_squared_error(df[f'Experimental Val ({units})'], df[f'Predicted Val ({units})']))
         new_row = {"FILE NAME": file,
-                       "MEAN ERROR": np.average(df['Mean Error (kcal/mol)']),
-                       "RMSE": rmse
+                       f"MEAN ERROR ({units})": np.average(df['Mean Error (kcal/mol)']),
+                       f"RMSE ({units})": rmse
                        }
         # Add the new row
         output_df.loc[len(output_df)] = new_row
 
     output_df.to_csv(final_path, index = False)
 
-def graphExpPred(infile_path):
+def graphExpPred(infile_path, target):
     init_dir = os.path.dirname(infile_path)
     parent_directory = os.path.dirname(init_dir) + "/"
     file_name = os.path.basename(os.path.normpath(infile_path))
     id = file_name.split('.')[0]
     output_path = parent_directory + "final_results/graph_" + id + ".png"
+
+    units = "kcal/mol"
+    if target == "dS (J/mol/K)":
+        units = "kcal/mol/K"
 
     df = pd.read_csv(infile_path)
 
@@ -73,22 +86,22 @@ def graphExpPred(infile_path):
         os.makedirs(parent_directory + "final_results")
 
     # Calculate R-squared
-    r_squared = r2_score(df['Experimental Val (kcal/mol)'], df['Predicted Val (kcal/mol)'])
+    r_squared = r2_score(df[f'Experimental Val ({units})'], df[f'Predicted Val ({units})'])
 
     # Calculate Mean Absolute Error
-    mae = mean_absolute_error(df['Experimental Val (kcal/mol)'], df['Predicted Val (kcal/mol)'])
+    mae = mean_absolute_error(df[f'Experimental Val ({units})'], df[f'Predicted Val ({units})'])
 
     plt.plot([5,-30],[5,-30], '--', zorder=1)
-    plt.scatter(df['Experimental Val (kcal/mol)'], df['Predicted Val (kcal/mol)'],color='#5c3c8b',zorder=2, alpha=0.75)
+    plt.scatter(df[f'Experimental Val ({units})'], df[f'Predicted Val ({units})'],color='#5c3c8b',zorder=2, alpha=0.75)
 
     plt.xlim([-30,5])
     plt.ylim([-30,5])
 
     plt.text(-29, 0, f'$R^2$ = {r_squared:.2f}', fontsize=12)
-    plt.text(-29, 2.5, f'MAE = {mae:.2f} kcal/mol', fontsize=12)
+    plt.text(-29, 2.5, f'MAE = {mae:.2f} {units}', fontsize=12)
 
-    plt.xlabel('Experimental Value (kcal/mol)')
-    plt.ylabel('Predicted Value (kcal/mol)')
+    plt.xlabel(f'Experimental Value ({units})')
+    plt.ylabel(f'Predicted Value ({units})')
 
     # Extract the part before the underscore
     split_list = file_name.split('_')
