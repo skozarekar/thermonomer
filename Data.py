@@ -112,7 +112,7 @@ def graphFeatureRanking(infile_path, num_feat):
     final_path = parent_directory + "featureGraph_" + id + ".png"
 
     top_features, importances = [], []
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(18, 6))
 
     for index, row in feature_df.iterrows():
         top_features.append(row["FEATURE NAME"])

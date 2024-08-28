@@ -159,7 +159,7 @@ def optimizerInit(n_iters, bayes_search = True):
     
     return xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer
 
-def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = False):
+def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = False, bayes = True):
     '''
         Obtains and saves the hyperparameters for each model and dataset pair. Calls getHyperparams.
 
@@ -180,19 +180,19 @@ def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = False):
     }
 
     # save params for set 1 / XGB model
-    xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = xgb_only)
+    xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = xgb_only, bayes_search=bayes)
     print("Dataset 1 Hyperparameters Complete")
 
     # save params for set 2 / all models
-    best_params_2 = getHyperparams(n_iters, x_df_dict["2"], y_df_dict["2"], xgb_only = xgb_only)
+    best_params_2 = getHyperparams(n_iters, x_df_dict["2"], y_df_dict["2"], xgb_only = xgb_only, bayes_search=bayes)
     print("Dataset 2 Hyperparameters complete")
 
     # save params for set 3 (solution phase only) / all models
-    best_params_3 = getHyperparams(n_iters, x_df_dict["3"], y_df_dict["3"], xgb_only = xgb_only)
+    best_params_3 = getHyperparams(n_iters, x_df_dict["3"], y_df_dict["3"], xgb_only = xgb_only, bayes_search=bayes)
     print("Dataset 3 Hyperparameters complete")
 
     # save params for set 4 (bulk phase only) / all models
-    best_params_4 = getHyperparams(n_iters, x_df_dict["4"], y_df_dict["4"], xgb_only = xgb_only)
+    best_params_4 = getHyperparams(n_iters, x_df_dict["4"], y_df_dict["4"], xgb_only = xgb_only, bayes_search=bayes)
     print("Dataset 4 Hyperparameters complete")
 
     hyperparams = {
@@ -224,7 +224,7 @@ def create_nn_model():
     model.compile(loss="mean_squared_error", optimizer="adam")
     return model
 
-def train_model_LOOCV(model_name, regressor, X, y):
+def train_model_LOOCV(model_name, regressor, X, y, target):
     '''
         Function to run a model with full LOO cross-validation
 
@@ -270,16 +270,28 @@ def train_model_LOOCV(model_name, regressor, X, y):
 
         # Calculate MAE for this specific test point
         err = mean_absolute_error(y_test, y_pred) / 4.184
+        expt_val = y_test.iloc[0]/4.184
+        pred_val = y_pred[0]/4.184
+        # converts to kcal / mol for dH
+        # converts to kcal J / mol K KJ for dS
 
-        # Append the values to the list
+        units = "kcal/mol"
+
+        if target == "dS (J/mol/K)":
+            err = err * .001
+            expt_vals = expt_vals * .001
+            pred_vals = pred_vals * .001
+            units = "kcal/mol/K"
+
         error_scores.append(err)
-        expt_vals.append(y_test.iloc[0]/4.184)
-        predicted_vals.append(y_pred[0]/4.184)
+        # Append the values to the list
+        expt_vals.append(expt_val)
+        predicted_vals.append(pred_val)
 
     output_dict = {
-            "Mean Error (kcal/mol)": error_scores,
-            "Experimental Val (kcal/mol)": expt_vals,
-            "Predicted Val (kcal/mol)": predicted_vals,
+            f"Mean Error ({units})": error_scores,
+            f"Experimental Val ({units})": expt_vals,
+            f"Predicted Val ({units})": predicted_vals,
             "MAE": np.mean(error_scores), 
             "STD": np.std(error_scores)
         }
@@ -288,7 +300,7 @@ def train_model_LOOCV(model_name, regressor, X, y):
 
     return output_dict
 
-def train_test_model(model_name, regressor, X, y, repetitions=200):
+def train_test_model(model_name, regressor, X, y, target, repetitions=200):
     '''
         Function to run a model where 90/10 stratified split based on phase
 
@@ -347,11 +359,19 @@ def train_test_model(model_name, regressor, X, y, repetitions=200):
 
         # Calculate MAE for this specific test point and append to list
         test_err = mean_absolute_error(y_test, y_pred_test) / 4.184
-        test_error_scores.append(test_err)
 
         # Calculate MAE for this specific training point and append to list
         train_err = mean_absolute_error(y_train, y_pred_train) / 4.184
+        # converts to kcal / mol for dH
+        # converts to kcal J / mol K KJ for dS
+
+        units = "kcal/mol"
+        if target == "dS (J/mol/K)":
+            test_err = test_err * .001
+            train_err = train_err * .001
+            units = "kcal/mol/K"
         train_error_scores.append(train_err)
+        test_error_scores.append(test_err)
 
     # Calculate the average MAE over all repetitions for both training and testing
     mean_train_mae = np.mean(train_error_scores)
@@ -366,8 +386,8 @@ def train_test_model(model_name, regressor, X, y, repetitions=200):
 
     # Save MAE values to a CSV file
     output_dict = {
-        "Train Error per Iteration (kcal/mol)": train_error_scores,
-        "Test Error per Iteration (kcal/mol)": test_error_scores,
+        f"Train Error per Iteration ({units})": train_error_scores,
+        f"Test Error per Iteration ({units})": test_error_scores,
         "Train Avg MAE": mean_train_mae,
         "Train STD MAE": std_train_mae,
         "Test Avg MAE": mean_test_mae,
@@ -528,7 +548,7 @@ def createDataSets(infile_path, target):
 
     return x_df_dict, y_df_dict
 
-def getHyperparams(n_iters, x_df, y_df, xgb_only = False):
+def getHyperparams(n_iters, x_df, y_df, xgb_only = False, bayes_search = True):
     '''
         This function finds hyperparameters using the output optimizer functions retrieved from calling optimizerInit for each model
 
@@ -544,7 +564,7 @@ def getHyperparams(n_iters, x_df, y_df, xgb_only = False):
             (dict): a dicitonary of the hyperparams for each model
     '''
 
-    xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer = optimizerInit(n_iters, bayes_search=False)
+    xgb_optimizer, rf_optimizer, svr_optimizer, kr_optimizer, gp_optimizer = optimizerInit(n_iters, bayes_search=bayes_search)
 
     xgb_optimizer.fit(x_df, y_df)
     best_params_xgb = xgb_optimizer.best_params_
@@ -605,7 +625,7 @@ def initModelRegressors(params):
 
     return regressor_dict
 
-def runModels(regressor_dict, X, y, uniq_id = ""):
+def runModels(regressor_dict, X, y, target, uniq_id = ""):
     '''
         A function that trains models with their given regressor and retrieves and saves the output in a .csv
 
@@ -622,7 +642,7 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
     for model_name, regressor in regressor_dict.items():
         print(f"RUNNING {model_name}")
 
-        ttest_output = train_test_model(model_name, regressor, X, y, repetitions=200)
+        ttest_output = train_test_model(model_name, regressor, X, y, target, repetitions=200)
 
         # save model data output 
         ttest_df = pd.DataFrame(ttest_output)
@@ -633,7 +653,7 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
         # if not ttest_features_df.empty:
         #     ttest_features_df.to_csv(f"model_results/{model_name}_{uniq_id}_featureRanks.csv")
 
-        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y)
+        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y, target)
         
         t_LOOCV_df = pd.DataFrame(t_LOOCV_output)
         if not os.path.exists("model_results_LOOCV/"):
@@ -642,7 +662,7 @@ def runModels(regressor_dict, X, y, uniq_id = ""):
         # if not ttest_features_df.empty:
         #     t_LOOCV_features_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}_featureRanks.csv")
 
-def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True, XGB_only = False):
+def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True, XGB_only = False, bayes = True):
     '''
         A function that takes in a dataset and runs models on four unique datasets that are subsets of the original set. 
         Results are saved in .csv files. 
@@ -665,7 +685,7 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
     print("    4: Bulk only")
 
     if get_hyperparams:
-        hyperparam_dicts = splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = XGB_only)
+        hyperparam_dicts = splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = XGB_only, bayes=bayes)
     else:
         with open('hyperparams.pkl', 'rb') as file:
             hyperparam_dicts = pickle.load(file)
@@ -751,7 +771,7 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
 
         features_df.to_csv(final_feat_path, index = False)
 
-        runModels(regressor_dict, X, y, uniq_id = key)
+        runModels(regressor_dict, X, y, target, uniq_id = key)
 
     print("OPERATION COMPLETE :)")
 

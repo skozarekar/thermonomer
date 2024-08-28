@@ -7,7 +7,7 @@ Usually the following needs to be imputed:
    
     1. Solute Parameters (missing parameterization)
     2. Dipole Moment (missing parameterization)
-    3. pep (only for enthalpy dH not entropy)
+    3. pep 
     NOTE: Solvent and SOLV_ columns will have np.nan values however do NOT impute for these columns
     as not every monomer has a solvent and not all solvents have experimental data 
 
@@ -74,13 +74,12 @@ def getColumnsWithMissing(infile_path):
 
 # -------------- MAIN FUNCTIONS -------------- #
 
-def impute(infile_path, target):
+def impute(infile_path):
     '''
         a function that finds and returns what columns have np.nan values
 
         Parameters:
             infile_path (str): the path to the dataset that you want to impute
-            target (str): enthalpy ("dH (kJ/mol)") or entropy ("dS (J/mol/K)")
 
         Output:
             saves a .csv file starting with imputed_
@@ -96,10 +95,8 @@ def impute(infile_path, target):
 
     # Columns that need to be imputed that are missing parameterizations
     impute_columns_nan= np.nan
-    if target == "dH":
-        impute_columns_nan = [col for col in df.columns if "SOLUTE_PARAM_" in col and col in missing] + [col for col in df.columns if "DIPOLE_" in col and col in missing] + ["PGTHERMO_PEP_ (kcal/mol)"]
-    else:
-        impute_columns_nan = [col for col in df.columns if "SOLUTE_PARAM_" in col and col in missing] + [col for col in df.columns if "DIPOLE_" in col and col in missing] 
+
+    impute_columns_nan = [col for col in df.columns if "SOLUTE_PARAM_" in col and col in missing] + [col for col in df.columns if "DIPOLE_" in col and col in missing] + ["PGTHERMO_PEP_ (kcal/mol)"]
 
     # imputes data that is missing due to missing paramaterizations
     # Loop over each row in the dataframe
@@ -184,14 +181,13 @@ def cleanRDKIT(infile_path):
     print("RDKIT Feature Cleaning Complete")
     return cleaned_path
 
-def main(infile_path, target):
+def main(infile_path):
     '''
         a function that calls all the functions (impute, oneHotEncode, conductAll) completing all of the data
         preprocessing that must be done to prepare for use in ML regression models. 
 
         Parameters:
             infile_path (str): the path to the dataset that you want to impute, one-hot encode and clean RDKIT columns
-            target (str): enthalpy ("dH (kJ/mol)") or entropy ("dS (J/mol/K)")
 
         Output:
             saves a .csv file starting with cleaned_encoded_imputed
@@ -207,7 +203,7 @@ def main(infile_path, target):
     encoded_path = directory_path + "/" + encoded_file_name
 
     # find the columns with cells that need to be imputed
-    impute(infile_path, target)
+    impute(infile_path)
 
     oneHotEncode(imputed_path)
     

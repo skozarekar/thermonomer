@@ -2,7 +2,7 @@
     this python file contains functions for obtaining feature data for monomers
 
     Available features:
-        1. pre-estimation property (PEP) - dH only
+        1. pre-estimation property (PEP)
         2. Tanimoto M/S similarity
         3. Dipole moment
         4. Solvent parameters
@@ -330,7 +330,7 @@ def getConformers(mol):
     return m3d
 
 # ---------- FEATURE FUNCTIONS ---------- #
-def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name, target):
+def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name):
     '''
         A function that gets all the features for a monomer
 
@@ -340,7 +340,7 @@ def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, 
             polymerization_type (str): the type of polymerization that the monomer undergoes
             dp (int): degree of polymerization
             solvent_name (str): the name of the solvent
-            target(str): either "dH" for enthalpy or "dS" for entropy. only difference in output is inclusion of PGTHERMO_PEP feature
+            target(str): either "dH (KJ/mol)" for enthalpy or "dS (J/mol/K)" for entropy. only difference in output is inclusion of PGTHERMO_PEP feature
 
         Output:
             (dict): a dictionary containing all of the features and input parameters
@@ -362,9 +362,8 @@ def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, 
     # include degrees of polymerization
     output.update(Polymerization(monomer_smiles, polymerization_type,dp).main())
 
-    if target == "dH":
-        # this is a parameter that is special to enthalpy
-        output["PGTHERMO_PEP_ (kcal/mol)"] = getPEP(monomer_smiles, polymerization_type, dp)
+    # this is a parameter that is special to enthalpy
+    output["PGTHERMO_PEP_ (kcal/mol)"] = getPEP(monomer_smiles, polymerization_type, dp)
 
     output["Tanimoto_Similarity"] = getTanimotoSimilarity(monomer_smiles,monomer_base_state,solvent_smiles)
     
@@ -930,11 +929,9 @@ def main(infile_path, target, dp):
         monomer_base_state = monomer_base_state_col
         polymerization_type = row["BASE_Category"]
 
-        update_dict = getAllFeatures(canonical_monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name, target)
-        if target == "dH":
-            update_dict["dH (KJ/mol)"] = row["dH (KJ/mol)"]
-        else:
-            update_dict["dS (J/mol/K)"] = row["dS (J/mol/K)"]
+        update_dict = getAllFeatures(canonical_monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name)
+
+        update_dict[target] = row[target]
 
         update_dict["BASE_Polymer_State"] = poly_base_state_col
 
