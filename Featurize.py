@@ -363,7 +363,7 @@ def getAllFeatures(monomer_smiles, monomer_base_state, polymerization_type, dp, 
     output.update(Polymerization(monomer_smiles, polymerization_type,dp).main())
 
     # this is a parameter that is special to enthalpy
-    output["PGTHERMO_PEP_ (kcal/mol)"] = getPEP(monomer_smiles, polymerization_type, dp)
+    # output["PGTHERMO_PEP_ (kcal/mol)"] = getPEP(monomer_smiles, polymerization_type, dp)
 
     output["Tanimoto_Similarity"] = getTanimotoSimilarity(monomer_smiles,monomer_base_state,solvent_smiles)
     
@@ -918,22 +918,29 @@ def main(infile_path, target, dp):
         canonical_monomer_smiles = row["Canonical SMILES"]
         print(f"Featurizing {canonical_monomer_smiles}")
 
+
         #  get the monomer and polymer base states
         base_state = row["BASE_State"]
-        monomer_base_state_col = base_state[0]
-        poly_base_state_col = base_state[1:]
+        monomer_base_state = base_state[0]
+        poly_base_state = base_state[1:]
 
         # get the parameters that will go into getAllFeatures
         solvent_name = row["Solvent"]
         # print(solvent_name)
-        monomer_base_state = monomer_base_state_col
+
         polymerization_type = row["BASE_Category"]
 
         update_dict = getAllFeatures(canonical_monomer_smiles, monomer_base_state, polymerization_type, dp, solvent_name)
 
         update_dict[target] = row[target]
+        if target == "dS (J/mol/K)":
+            update_dict["Temp (C)"] = row["Temp (C)"]
+        
+        update_dict["Source"] = row["Source"]
 
-        update_dict["BASE_Polymer_State"] = poly_base_state_col
+        update_dict["BASE_Polymer_State"] = poly_base_state
+        update_dict["Year"] = row["Year"]
+        update_dict["BASE_State"] = row["BASE_State"]
 
         if index ==0:
             featurized_df = pd.DataFrame([update_dict])

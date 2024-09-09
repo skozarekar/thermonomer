@@ -95,8 +95,10 @@ def impute(infile_path):
 
     # Columns that need to be imputed that are missing parameterizations
     impute_columns_nan= np.nan
+    
+    impute_columns_nan = [col for col in df.columns if (("SOLUTE_PARAM_" in col and col in missing) or ("DIPOLE_" in col and col in missing)) and "Temp (C)" not in col]
+    # impute_columns_nan = [col for col in df.columns if (("SOLUTE_PARAM_" in col and col in missing) or ("DIPOLE_" in col and col in missing)) and "Temp (C)" not in col] + ["PGTHERMO_PEP_ (kcal/mol)"]
 
-    impute_columns_nan = [col for col in df.columns if "SOLUTE_PARAM_" in col and col in missing] + [col for col in df.columns if "DIPOLE_" in col and col in missing] + ["PGTHERMO_PEP_ (kcal/mol)"]
 
     # imputes data that is missing due to missing paramaterizations
     # Loop over each row in the dataframe
@@ -118,6 +120,7 @@ def impute(infile_path):
                 # Set the best value if the score ever goes higher than 0
                 if best_score > 0:
                     df.loc[idx, col] = best_val
+
     df.to_csv(final_path, encoding="utf-8")
     print("Imputing Complete")
 
@@ -144,6 +147,7 @@ def oneHotEncode(infile_path):
     # one-hot encode state and category columns
     encode_columns = [col for col in df.columns if "BASE_" in col and col != "BASE_State"]
     df = pd.get_dummies(df, columns=encode_columns)
+
     df.to_csv(encoded_path, encoding="utf-8")
 
     # self.df.drop(columns=['BASE_State'], inplace=True)

@@ -112,6 +112,7 @@ class Polymerization:
             ],
             "ionic": [
                 #initiation
+                # ionic = aledhyde
                 [
                     #if "S" or "s" is present in smiles:
                     "[CX3:1](=[S:2]).[S:3]>>[S:3]-[C:1]-[S:2]", 

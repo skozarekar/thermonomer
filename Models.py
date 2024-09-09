@@ -180,15 +180,40 @@ def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = False, bay
     }
 
     # save params for set 1 / XGB model
-    xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = xgb_only, bayes_search=bayes)
+    xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = True, bayes_search=bayes)
     print("Dataset 1 Hyperparameters Complete")
+
+    hyperparams = {
+        "1": xgb_best_params_1,
+        "2": np.nan,
+        "3": np.nan,
+        "4": np.nan,
+    }
+    with open('hyperparams.pkl', 'wb') as file:
+        pickle.dump(hyperparams, file)
 
     # save params for set 2 / all models
     best_params_2 = getHyperparams(n_iters, x_df_dict["2"], y_df_dict["2"], xgb_only = xgb_only, bayes_search=bayes)
+    hyperparams = {
+        "1": xgb_best_params_1,
+        "2": best_params_2,
+        "3": np.nan,
+        "4": np.nan,
+    }
+    with open('hyperparams.pkl', 'wb') as file:
+        pickle.dump(hyperparams, file)
     print("Dataset 2 Hyperparameters complete")
 
     # save params for set 3 (solution phase only) / all models
     best_params_3 = getHyperparams(n_iters, x_df_dict["3"], y_df_dict["3"], xgb_only = xgb_only, bayes_search=bayes)
+    hyperparams = {
+        "1": xgb_best_params_1,
+        "2": best_params_2,
+        "3": best_params_3,
+        "4": np.nan,
+    }
+    with open('hyperparams.pkl', 'wb') as file:
+        pickle.dump(hyperparams, file)
     print("Dataset 3 Hyperparameters complete")
 
     # save params for set 4 (bulk phase only) / all models
@@ -224,7 +249,7 @@ def create_nn_model():
     model.compile(loss="mean_squared_error", optimizer="adam")
     return model
 
-def train_model_LOOCV(model_name, regressor, X, y, target):
+def train_model_LOOCV(model_name, regressor, X, y, target, categories = np.nan):
     '''
         Function to run a model with full LOO cross-validation
 
@@ -249,6 +274,11 @@ def train_model_LOOCV(model_name, regressor, X, y, target):
     error_scores = []
     expt_vals = []
     predicted_vals = []
+        # if not pd.isna(categories):
+        #     X_train, X_test, y_train, y_test, year_range_train, year_range_test, source_range_train, source_range_test, base_range_train, base_range_test = train_test_split(
+        #         X, y, categories_df["Year", categories_df["Source", categories_df["BASE_State"]]], test_size=0.2, random_state=42)
+        # else:
+        #     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.10, stratify=stratify_labels)
 
     for train_index, test_index in loo.split(X):
         try: # ndarray
@@ -259,6 +289,11 @@ def train_model_LOOCV(model_name, regressor, X, y, target):
             X_train, X_test = X.iloc[train_index], X.iloc[test_index]
             y_train, y_test = y.iloc[train_index], y.iloc[test_index]      
 
+        # categories_df = pd.DataFrame(categories)
+        # if not pd.isna(categories):
+        #     year_range_train, year_range_test = categories_df.loc[train_index, 'Year'], categories_df.loc[test_index, 'Year']
+        #     source_range_train, source_range_test = categories_df.loc[train_index, 'Source'], categories_df.loc[test_index, 'Source']
+        #     base_range_train, base_range_test =categories_df.loc[train_index, 'BASE_State'], categories_df.loc[test_index, 'BASE_State']
         # Fit your regressor on the training data
         # if model_name == "NN":
         #     regressor.fit(X_train, y_train, epochs=10, batch_size=10, verbose=0)
@@ -273,28 +308,38 @@ def train_model_LOOCV(model_name, regressor, X, y, target):
         expt_val = y_test.iloc[0]/4.184
         pred_val = y_pred[0]/4.184
         # converts to kcal / mol for dH
-        # converts to kcal J / mol K KJ for dS
-
-        units = "kcal/mol"
-
-        if target == "dS (J/mol/K)":
-            err = err * .001
-            expt_vals = expt_vals * .001
-            pred_vals = pred_vals * .001
-            units = "kcal/mol/K"
-
+        # converts to cal / mol / K for dS
         error_scores.append(err)
         # Append the values to the list
         expt_vals.append(expt_val)
         predicted_vals.append(pred_val)
 
-    output_dict = {
+        units = "kcal/mol"
+
+        if target == "dS (J/mol/K)":
+            units = "cal/mol/K"
+
+    if not pd.isna(categories):
+        output_dict = {
+                f"Mean Error ({units})": error_scores,
+                f"Experimental Val ({units})": expt_vals,
+                f"Predicted Val ({units})": predicted_vals,
+                "MAE": np.mean(error_scores), 
+                "STD": np.std(error_scores),
+                "Year": categories["Year"], 
+                "Source": categories["Source"], 
+                "BASE_State": categories["BASE_State"]
+            }
+        
+    else:
+        output_dict = {
             f"Mean Error ({units})": error_scores,
             f"Experimental Val ({units})": expt_vals,
             f"Predicted Val ({units})": predicted_vals,
             "MAE": np.mean(error_scores), 
             "STD": np.std(error_scores)
         }
+
     
     print(f"TRAIN {model_name} COMPLETE")
 
@@ -363,15 +408,13 @@ def train_test_model(model_name, regressor, X, y, target, repetitions=200):
         # Calculate MAE for this specific training point and append to list
         train_err = mean_absolute_error(y_train, y_pred_train) / 4.184
         # converts to kcal / mol for dH
-        # converts to kcal J / mol K KJ for dS
+        # converts to cal / mol / K for dS
+        train_error_scores.append(train_err)
+        test_error_scores.append(test_err)
 
         units = "kcal/mol"
         if target == "dS (J/mol/K)":
-            test_err = test_err * .001
-            train_err = train_err * .001
-            units = "kcal/mol/K"
-        train_error_scores.append(train_err)
-        test_error_scores.append(test_err)
+            units = "cal/mol/K"
 
     # Calculate the average MAE over all repetitions for both training and testing
     mean_train_mae = np.mean(train_error_scores)
@@ -434,6 +477,23 @@ def getFeatureRanking(X, model, model_name, y, num_iterations = 100):
 
     else: #return empty df
         return pd.DataFrame()
+
+def getCats(df):
+    source = df['Source']
+    year = df['Year']
+    basestate = df['BASE_State']
+
+    df = df.drop(
+            columns=[
+                "Source",
+                "Year",
+                "BASE_State"])
+    
+    my_dict = {"Source": source,
+               "Year": year,
+               "BASE_State": basestate}
+    return my_dict, df
+
 # -------------- MAIN FUNCTIONS -------------- #
 def getXy(infile_path, target):
     '''
@@ -474,6 +534,7 @@ def createDataSets(infile_path, target):
     '''
 
     imputed_df = pd.read_csv(infile_path, index_col=0, encoding="utf-8")
+
     base_path = os.path.dirname(infile_path)
 
     # drop cols that shouldnt be used in any Dataset
@@ -491,34 +552,63 @@ def createDataSets(infile_path, target):
             "DP_5",
             "MIX_dGsolv298(kJ/mol) epi.unc.",
             "MIX_dHsolv298(kJ/mol) epi.unc.",
+            # "Source",
+            # "Year",
+            # "BASE_State"
             ]
     )
 
-    # SET 1: Full + solvent parameters
-    X_full_with_solvent_params = imputed_df
+    # SET 1: Full + solvent parameters + temp
+    X_full_with_solvent_params_init = imputed_df
 
-    # SET 2: Drop solvent parameters 
-    imputed_df = imputed_df.drop(
-    columns=[
-        "SOLV_PARAM_s_g",
-        "SOLV_PARAM_b_g",
-        "SOLV_PARAM_e_g",
-        "SOLV_PARAM_l_g",
-        "SOLV_PARAM_a_g",
-        "SOLV_PARAM_c_g",
-        "SOLV_PARAM_visc at 298 K (cP)",
-        "SOLV_PARAM_dielectric constant",
-        ]
-    )
+    s1_categories_dict, X_full_with_solvent_params = getCats(X_full_with_solvent_params_init)
 
-    # full + no solvent params
-    X_full = imputed_df
+    # SET 2: Drop solvent parameters and temperature, both of which have np.nan values
+    if target == "dS (J/mol/K)":
+        imputed_df = imputed_df.drop(
+            columns=[
+                "SOLV_PARAM_s_g",
+                "SOLV_PARAM_b_g",
+                "SOLV_PARAM_e_g",
+                "SOLV_PARAM_l_g",
+                "SOLV_PARAM_a_g",
+                "SOLV_PARAM_c_g",
+                "SOLV_PARAM_visc at 298 K (cP)",
+                "SOLV_PARAM_dielectric constant",
+                "Temp (C)"
+                ]
+            )
+    else:
+        imputed_df = imputed_df.drop(
+            columns=[
+                "SOLV_PARAM_s_g",
+                "SOLV_PARAM_b_g",
+                "SOLV_PARAM_e_g",
+                "SOLV_PARAM_l_g",
+                "SOLV_PARAM_a_g",
+                "SOLV_PARAM_c_g",
+                "SOLV_PARAM_visc at 298 K (cP)",
+                "SOLV_PARAM_dielectric constant",
+                ]
+            )
 
-    # Set 3: solvents only
-    X_solvent_only = X_full_with_solvent_params.loc[X_full_with_solvent_params.BASE_Monomer_State_s]
+    # Set 2: full + no solvent params no temp
+    X_full_init = imputed_df
+    s2_categories_dict, X_full = getCats(X_full_init)
+
+    # Set 3: solvents only no temp
+    if target == "dS (J/mol/K)":
+        solvent_no_temp = X_full_with_solvent_params_init.drop(
+                columns=[
+                    "Temp (C)"])
+        X_solvent_only = solvent_no_temp.loc[solvent_no_temp.BASE_Monomer_State_s]
+    else: 
+        X_solvent_only = X_full_with_solvent_params_init.loc[X_full_with_solvent_params_init.BASE_Monomer_State_s]
+    s3_categories_dict, X_solvent_only = getCats(X_solvent_only)
 
     # Set 4: bulk only
-    X_bulk_only = X_full.loc[X_full.BASE_Monomer_State_l]
+    X_bulk_only = X_full_init.loc[X_full_init.BASE_Monomer_State_l]
+    s4_categories_dict, X_bulk_only = getCats(X_bulk_only)
 
     # Create an empty dictionary to store data frames
     # _x does not include df
@@ -537,6 +627,13 @@ def createDataSets(infile_path, target):
         "4": X_bulk_only[target],
     }
 
+    categories_dict = {
+        "1": s1_categories_dict,
+        "2": s2_categories_dict,
+        "3": s3_categories_dict,
+        "4": s4_categories_dict
+    }
+
     # Save as csv just to have as a record
     # Create the folder
     split_path = base_path + "/splits/"
@@ -545,6 +642,9 @@ def createDataSets(infile_path, target):
     X_full.to_csv(split_path + "split_2.csv")
     X_solvent_only.to_csv(split_path + "split_3.csv")
     X_bulk_only.to_csv(split_path + "split_4.csv")
+
+    with open('categories.pkl', 'wb') as file:
+        pickle.dump(categories_dict, file)
 
     return x_df_dict, y_df_dict
 
@@ -639,9 +739,14 @@ def runModels(regressor_dict, X, y, target, uniq_id = ""):
             NONE
             saves model output in .csv
     '''
+    with open('categories.pkl', 'rb') as file:
+        categories_dict = pickle.load(file)
+        # print(categories_dict)
+
     for model_name, regressor in regressor_dict.items():
         print(f"RUNNING {model_name}")
 
+        categories = categories_dict[uniq_id]
         ttest_output = train_test_model(model_name, regressor, X, y, target, repetitions=200)
 
         # save model data output 
@@ -653,7 +758,7 @@ def runModels(regressor_dict, X, y, target, uniq_id = ""):
         # if not ttest_features_df.empty:
         #     ttest_features_df.to_csv(f"model_results/{model_name}_{uniq_id}_featureRanks.csv")
 
-        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y, target)
+        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y, target, categories=categories)
         
         t_LOOCV_df = pd.DataFrame(t_LOOCV_output)
         if not os.path.exists("model_results_LOOCV/"):
@@ -760,22 +865,28 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
         # dictionary with keys for each model and values the corresponding regressor function
         regressor_dict = value
 
-        features_df = XGBtopFeatures(X, y, regressor_dict["XGB"])
+        xgb_feats_df = topFeatures(X, y, regressor_dict["XGB"])
+
         parent_directory = os.path.dirname(os.path.dirname(infile_path)) + "/"
 
         if not os.path.exists(parent_directory + "final_results"):
             # Check if an output folder exist if not make one
             os.makedirs(parent_directory + "final_results")
 
-        final_feat_path = parent_directory + "final_results/feature_ranking_" + key + ".csv"
+        final_feat_path = parent_directory + "final_results/XGB_featRank_" + key + ".csv"
+        final_feat_path2 = parent_directory + "final_results/RF_featRank_" + key + ".csv"
 
-        features_df.to_csv(final_feat_path, index = False)
+        xgb_feats_df.to_csv(final_feat_path, index = False)
+
+        if key != "1":
+            RF_feats_df = topFeatures(X, y, regressor_dict["RF"])
+            RF_feats_df.to_csv(final_feat_path2, index = False)
 
         runModels(regressor_dict, X, y, target, uniq_id = key)
 
     print("OPERATION COMPLETE :)")
 
-def XGBtopFeatures(X, y, model, num_iterations = 100, num_top_features = 50):
+def topFeatures(X, y, model, num_iterations = 100, num_top_features = 50):
     # Initialize dictionary to store feature counts
     feature_counts = {feature: 0 for feature in X.columns}
     # Initialize array to store feature importances
@@ -814,3 +925,7 @@ def XGBtopFeatures(X, y, model, num_iterations = 100, num_top_features = 50):
         output_df.loc[len(output_df)] = new_row
 
     return output_df
+
+
+# if __name__ == "__MAIN__":
+#     # only works if u specifically run this file HECK YEAH
