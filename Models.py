@@ -178,6 +178,8 @@ def splitDatasetHyperparams(n_iters, x_df_dict, y_df_dict, xgb_only = False, bay
         "3": np.nan,
         "4": np.nan,
     }
+    print(f"In splitDatasetHyperparams: {xgb_only}")
+
 
     # save params for set 1 / XGB model
     xgb_best_params_1 = getHyperparams(n_iters, x_df_dict["1"], y_df_dict["1"], xgb_only = True, bayes_search=bayes)
@@ -328,7 +330,9 @@ def train_model_LOOCV(model_name, regressor, X, y, target, categories = np.nan):
                 "STD": np.std(error_scores),
                 "Year": categories["Year"], 
                 "Source": categories["Source"], 
-                "BASE_State": categories["BASE_State"]
+                "BASE_State": categories["BASE_State"],
+                "Canonical_Monomer_SMILES": categories["Canonical_Monomer_SMILES"],
+                "Polymerization": categories["Polymerization"]
             }
         
     else:
@@ -482,16 +486,22 @@ def getCats(df):
     source = df['Source']
     year = df['Year']
     basestate = df['BASE_State']
+    monomer_smiles = df["Canonical_Monomer_SMILES"]
+    polymerize = df["BASE_Category"]
 
     df = df.drop(
             columns=[
                 "Source",
                 "Year",
-                "BASE_State"])
+                "BASE_State",
+                "Canonical_Monomer_SMILES",
+                "BASE_Category"])
     
     my_dict = {"Source": source,
                "Year": year,
-               "BASE_State": basestate}
+               "BASE_State": basestate,
+               "Canonical_Monomer_SMILES": monomer_smiles,
+               "Polymerization": polymerize}
     return my_dict, df
 
 # -------------- MAIN FUNCTIONS -------------- #
@@ -541,7 +551,7 @@ def createDataSets(infile_path, target):
     imputed_df = imputed_df.drop(
         columns=[
             "Solvent",
-            "Canonical_Monomer_SMILES",
+            # "Canonical_Monomer_SMILES",
             "Solvent_SMILES",
             "Solvent_SMILES_2",
             "DP_0",
@@ -554,7 +564,8 @@ def createDataSets(infile_path, target):
             "MIX_dHsolv298(kJ/mol) epi.unc.",
             # "Source",
             # "Year",
-            # "BASE_State"
+            # "BASE_State",
+            # "BASE_Category"
             ]
     )
 
@@ -674,7 +685,7 @@ def getHyperparams(n_iters, x_df, y_df, xgb_only = False, bayes_search = True):
             "KR": np.nan,
             "RF": np.nan,
             }
-    
+    print(f"In hyperparams: {xgb_only}")
     if not xgb_only:
         rf_optimizer.fit(x_df, y_df)
         best_params_rf = rf_optimizer.best_params_
@@ -746,7 +757,7 @@ def runModels(regressor_dict, X, y, target, uniq_id = ""):
     for model_name, regressor in regressor_dict.items():
         print(f"RUNNING {model_name}")
 
-        categories = categories_dict[uniq_id]
+        categories_specific = categories_dict[uniq_id]
         ttest_output = train_test_model(model_name, regressor, X, y, target, repetitions=200)
 
         # save model data output 
@@ -755,15 +766,18 @@ def runModels(regressor_dict, X, y, target, uniq_id = ""):
             # Check if an output folder exist if not make one
             os.makedirs("model_results/")
         ttest_df.to_csv(f"model_results/{model_name}_{uniq_id}.csv")
+        print("SAVED")
+
         # if not ttest_features_df.empty:
         #     ttest_features_df.to_csv(f"model_results/{model_name}_{uniq_id}_featureRanks.csv")
 
-        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y, target, categories=categories)
+        t_LOOCV_output = train_model_LOOCV(model_name, regressor, X, y, target, categories=categories_specific)
         
         t_LOOCV_df = pd.DataFrame(t_LOOCV_output)
         if not os.path.exists("model_results_LOOCV/"):
             os.makedirs("model_results_LOOCV/")
         t_LOOCV_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}.csv")
+        print("SAVED")
         # if not ttest_features_df.empty:
         #     t_LOOCV_features_df.to_csv(f"model_results_LOOCV/{model_name}_LOOCV_{uniq_id}_featureRanks.csv")
 
@@ -782,6 +796,8 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
     '''
 
     x_df_dict, y_df_dict = createDataSets(infile_path, target)
+    print(f"In main: {XGB_only}")
+
 
     print("UNIQUE DATASETS CREATED:")
     print("    1: Full + solvent parameters")
@@ -878,7 +894,7 @@ def main(infile_path, n_iters, target, get_hyperparams = True, get_models = True
 
         xgb_feats_df.to_csv(final_feat_path, index = False)
 
-        if key != "1":
+        if key != "1" and XGB_only == False:
             RF_feats_df = topFeatures(X, y, regressor_dict["RF"])
             RF_feats_df.to_csv(final_feat_path2, index = False)
 

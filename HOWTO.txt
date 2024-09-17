@@ -1,0 +1,6 @@
+python <file-name> input1 input2 ....
+ -> in the file, 
+	import sys
+	
+	if __name__ == "__main__":
+		<do smth with sys.argv>
