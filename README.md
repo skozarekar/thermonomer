@@ -73,5 +73,4 @@ Shivani Kozarekar - shivanikozarekar2026@u.northwestern.edu
 
 
 ## Acknowledgments
-Prof. Linda Broadbelt
 Hunter Lee
