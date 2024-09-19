@@ -139,7 +139,7 @@ def steric_features(monomer_SMILES, category):
     
     except:
         print("No RU created:", monomer_SMILES, category)
-        return np.nan, np.nan
+        return list(np.nan, np.nan)
 
     # Calculate steric features
     # list that holds wildcard atoms (atoms with atomic number of 0). A wildcard can represent any type of atom
@@ -160,7 +160,7 @@ def steric_features(monomer_SMILES, category):
         backbone_len = len(backbone)
         ratio = round((len(atom_list) - len(backbone)) / len(atom_list), 2)
 
-        return backbone_len, ratio
+        return list(backbone_len, ratio)
     except:
         raise Exception("Issue with backbone length and side chain ratio calculation.")
 
