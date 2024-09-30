@@ -55,7 +55,7 @@ def PEP(monomer_SMILES, max_DP, category):
         Hfs.append(heat_formation)
 
     try:
-        PEP = Hfs[max_DP-1] - Hfs[max_DP-2] - Hfs[0]
+        PEP = Hfs[max_DP] - Hfs[max_DP-1] - Hfs[0]
         Hfs.append(PEP)
     except:
         raise Exception("Unable to calculate PEP.")
