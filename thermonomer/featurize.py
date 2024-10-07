@@ -38,6 +38,18 @@ _repeat_rxn_dict = {
     "([CH2:1]-[CH2:2]).[*:3]-[*:4]>>([C:2]-[*:3].[C:1]-[*:4])"),
 }
 
+# Function to calculate Tanimoto similarity between two SMILES
+def calculate_tanimoto_similarity(smiles1, smiles2):
+    mol1 = Chem.MolFromSmiles(smiles1)
+    mol2 = Chem.MolFromSmiles(smiles2)
+
+    if mol1 is not None and mol2 is not None:
+        fp1 = AllChem.GetMorganFingerprintAsBitVect(mol1, 2, nBits=1024)
+        fp2 = AllChem.GetMorganFingerprintAsBitVect(mol2, 2, nBits=1024)
+        return AllChem.DataStructs.TanimotoSimilarity(fp1, fp2)
+    else:
+        return 0.0
+
 def PEP(monomer_SMILES, max_DP, category):
     if category == 'misc':
         return [np.nan for i in range(max_DP + 1)]
