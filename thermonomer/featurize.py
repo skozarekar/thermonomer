@@ -11,6 +11,8 @@ import pandas as pd
 from openbabel import pybel
 from openbabel._openbabel import OBChargeModel_FindType
 
+from rdkit import Chem
+from rdkit.Chem import AllChem
 from rdkit.Chem import Descriptors, MolFromSmiles, MolToSmiles
 from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
 from rdkit.DataStructs import TanimotoSimilarity
@@ -40,8 +42,8 @@ _repeat_rxn_dict = {
 
 # Function to calculate Tanimoto similarity between two SMILES
 def calculate_tanimoto_similarity(smiles1, smiles2):
-    mol1 = Chem.MolFromSmiles(smiles1)
-    mol2 = Chem.MolFromSmiles(smiles2)
+    mol1 = MolFromSmiles(smiles1)
+    mol2 = MolFromSmiles(smiles2)
 
     if mol1 is not None and mol2 is not None:
         fp1 = AllChem.GetMorganFingerprintAsBitVect(mol1, 2, nBits=1024)
