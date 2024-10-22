@@ -21,11 +21,10 @@ def calculate_tanimoto_similarity(smiles1, smiles2):
     
 # Function to run a model with full LOO cross-validation
 def train_model_LOOCV(model_name, regressor, feature_subset, X, y, results_folder):
-    if model_name != "RF":
-        # Scale Data
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        X = pd.DataFrame(X_scaled, columns=X.columns)
+    # Scale Data
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    X = pd.DataFrame(X_scaled, columns=X.columns)
 
     # Perform Leave One Out
     loo = LeaveOneOut()
@@ -90,7 +89,7 @@ def train_test_model(model_name, regressor, feature_subset, X, y, results_folder
         stratify_labels = X.values[:, [g_index, l_index, s_index]]
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.10, stratify=stratify_labels)
 
-        if model_name != "RF":
+        if model_name != "RF" and model_name != "XGB":
             # Scale Data
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
@@ -99,7 +98,7 @@ def train_test_model(model_name, regressor, feature_subset, X, y, results_folder
         # Fit your regressor on the training data
         if model_name == "NN":
             regressor.fit(X_train_scaled, y_train, epochs=10, batch_size=10, verbose=0)
-        elif model_name == "RF":
+        elif model_name == "RF" or model_name == "XGB":
             regressor.fit(X_train, y_train.values.ravel())
         else:
             regressor.fit(X_train_scaled, y_train.values.ravel())
@@ -159,7 +158,7 @@ def train_test_model_top_feats(model_name, regressor, feature_subset, X, y, resu
         X_train = X_train[top_features_list[:num_features]]
         X_test = X_test[top_features_list[:num_features]]
 
-        if model_name != "RF":
+        if model_name != "RF" and model_name != "XGB":
             # Scale Data
             scaler = StandardScaler()
             X_train_scaled = scaler.fit_transform(X_train)
@@ -168,7 +167,7 @@ def train_test_model_top_feats(model_name, regressor, feature_subset, X, y, resu
         # Fit your regressor on the training data
         if model_name == "NN":
             regressor.fit(X_train_scaled, y_train, epochs=10, batch_size=10, verbose=0)
-        elif model_name == "RF":
+        elif model_name == "RF" or model_name == "XGB":
             regressor.fit(X_train, y_train.values.ravel())
         else:
             regressor.fit(X_train_scaled, y_train.values.ravel())

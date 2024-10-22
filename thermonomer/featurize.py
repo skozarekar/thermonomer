@@ -1,8 +1,6 @@
 import math
 import os
 import requests
-import warnings
-import csv
 from urllib import parse
 
 import numpy as np
@@ -12,13 +10,16 @@ from openbabel import pybel
 from openbabel._openbabel import OBChargeModel_FindType
 
 from rdkit import Chem
-from rdkit.Chem import AllChem
-from rdkit.Chem import Descriptors, MolFromSmiles, MolToSmiles
+from rdkit.Chem import AllChem, Period
+from rdkit.Chem import Descriptors, MolFromSmiles
 from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
 from rdkit.DataStructs import TanimotoSimilarity
 from rdkit.ML.Descriptors import MoleculeDescriptors
-from rdkit.Chem.rdmolops import GetShortestPath
+from rdkit.Chem.rdmolops import GetShortestPath, FindPotentialStereo
 from rdkit.Chem import rdChemReactions
+from rdkit.Chem import Descriptors, MolFromSmiles, GetDistanceMatrix, FindMolChiralCenters
+from rdkit.Chem.rdMolDescriptors import CalcRadiusOfGyration, CalcSpherocityIndex, DoubleCubicLatticeVolume, CalcNumBridgeheadAtoms
+
 
 # my imports
 import pgthermo.properties as prop
@@ -140,7 +141,7 @@ def steric_features(monomer_SMILES, category):
     if category == "misc":
         return [np.nan, np.nan]
 
-    # Then use operator
+    # Then use operator to get the repeat unit
     try:
         rxn = _repeat_rxn_dict[category]
 
@@ -154,6 +155,8 @@ def steric_features(monomer_SMILES, category):
     except:
         print("No RU created:", monomer_SMILES, category)
         return [np.nan, np.nan]
+    
+    RU_smiles = Chem.MolToSmiles(mol)
 
     # Calculate steric features
     # list that holds wildcard atoms (atoms with atomic number of 0). A wildcard can represent any type of atom
@@ -171,12 +174,23 @@ def steric_features(monomer_SMILES, category):
 
         backbone = GetShortestPath(mol, wildcard_idxs[0], wildcard_idxs[1])
 
+        # backbone length and side chain ratio (Shivani)
         backbone_len = len(backbone)
         ratio = round((len(atom_list) - len(backbone)) / len(atom_list), 2)
 
-        return [backbone_len, ratio]
+        # Hunter
+        wiener_idx = _get_wiener_idx(monomer_SMILES, category, RU_smiles)
+        chiral_centers = _get_num_chiral_centers(monomer_SMILES)
+        rad_gyration = _get_radius_of_gyration(monomer_SMILES)
+        spherocity = _get_spherocity(monomer_SMILES)
+        vol = _get_volume(monomer_SMILES)
+        bridgehead = _get_num_bridgehead_atoms(monomer_SMILES)
+        stereocenters = _get_num_stereocenters(monomer_SMILES, category, RU_smiles)
+
+        return [backbone_len, ratio, wiener_idx, chiral_centers, rad_gyration, spherocity, vol, bridgehead, stereocenters]
     except:
-        raise Exception("Issue with backbone length and side chain ratio calculation.")
+        raise Exception("Issue with backbone length and side chain ratio calculation (or Hunter's features but too many to list).")
+    
 
 def get_RMG_mix(monomer_state, monomer_SMILES, solvent_SMILES):
     '''
@@ -286,3 +300,188 @@ def get_RMG_solute_params(monomer_SMILES):
 
         # return the values from chemprop
         return list_GC + list_ML
+
+
+
+def _get_wiener_idx(monomer_smiles, polymerization_type, ru_smiles):
+    '''
+        A function that calculates the Wiener Index using an altered version of Greg Landrum's code: 
+        https://sourceforge.net/p/rdkit/mailman/message/36802142/
+
+        Parameters: 
+            monomer_smiles(str): the canonical smiles string of the monomer
+            polymerization_type (str): the type of polymerization the monomer undergoes
+
+        Output:
+            (float): the sum of distances between all pairs of atoms in the molecule
+
+    '''    
+    try:
+        repeat_unit = ru_smiles
+        mol = MolFromSmiles(repeat_unit)
+        sum = 0
+        # amat is a distance matrix
+        amat = GetDistanceMatrix(mol)
+        num_atoms = mol.GetNumAtoms()
+
+        for i in range(num_atoms):
+            for j in range(i+1,num_atoms):
+                # adds the distance between atom i and j
+                sum += amat[i][j]
+        return sum
+    except: 
+        print(f"Could not get Wiener Index for {monomer_smiles}")
+        return np.nan
+
+def _get_num_chiral_centers(monomer_smiles):
+    '''
+        A function that provides which atoms in the molecule are chiral centers and the orientation of the center
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+        
+        Output:
+            (int): the count of chiral centers
+    '''
+
+    mol = MolFromSmiles(monomer_smiles)
+    chiral_list = FindMolChiralCenters(mol)
+
+    ptable = Chem.GetPeriodicTable()
+
+    fin_list = []
+    for center in chiral_list:
+        atomic_num = center[0]
+        atom_name = ptable.GetElementSymbol(atomic_num)
+        # [atom, orientation]
+        fin_list.append([atom_name,center[1]])
+
+    ## can adjust the function to output fin_list if you would rather have atom_name and center orientation information 
+    return len(fin_list)
+
+def _get_radius_of_gyration(monomer_smiles):
+    '''
+        A function that calcualtes the radius of gyration with code altered from the following github code: 
+        https://github.com/rdkit/rdkit/issues/2924
+
+        Parameters: 
+            monomer_smiles(str): the canonical smiles string of the monomer
+        
+        Output:
+            (float): the radius
+    '''    
+
+    mol = MolFromSmiles(monomer_smiles)
+
+    # generate conformers for molecule to work in 3d space
+    m3d=_get_conformers(mol)
+
+    if m3d.GetNumConformers()>=1:
+        radius = CalcRadiusOfGyration(m3d)
+        return radius
+    else: 
+        return np.nan
+
+def _get_spherocity(monomer_smiles):
+    '''
+        A function that measures the spherocity of a monomer using RDKIT
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (float): spheroity id
+    '''
+
+    try:
+        mol = MolFromSmiles(monomer_smiles)
+
+        # generate conformers for molecule to work in 3d space
+        m3d=_get_conformers(mol)
+
+        sphere_id = CalcSpherocityIndex(m3d)
+        return sphere_id
+    except:
+        print(f"Could not get spherocity of {monomer_smiles}")
+        return np.nan
+
+def _get_volume(monomer_smiles):
+    '''
+        A function that uses rdkit to find the Van der Waals volume and total volume of a molecule 
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (dictionary) contains the volumes with keys having prefix STERIC_
+    '''
+
+    try: 
+        output = {}
+        mol= MolFromSmiles(monomer_smiles)
+        
+        # generate conformers for molecule to work in 3d space
+        m3d=_get_conformers(mol)
+
+        dcl_id = DoubleCubicLatticeVolume(m3d)
+
+        # Get the van der Waals Volume of the molecule 
+        output["STERIC_vdwVolume"] = dcl_id.GetVDWVolume()
+        output["STERIC_totalVolume"] = dcl_id.GetVolume()
+
+        return output
+
+    except:
+        print(f"unable to get volume/vdw volume for {monomer_smiles}")
+        return np.nan
+
+def _get_num_bridgehead_atoms(monomer_smiles):
+    '''
+        A function that uses rdkit to find the number of bridgehead atoms
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+
+        Output:
+            (int): a count of the number of bridgehead atoms
+    '''
+
+    mol = MolFromSmiles(monomer_smiles)
+    bh = CalcNumBridgeheadAtoms(mol)
+    return bh
+
+def _get_num_stereocenters(monomer_smiles, polymerization_type, ru_smiles):
+    '''
+        A function that uses rdkit to find potential stereo elements in a molecule 
+
+        Parameters:
+            monomer_smiles(str): the canonical smiles string of the monomer
+            polymerization_type (str): the type of polymerization the monomer undergoes
+
+        Output:
+            (int) a count of the number of stereocenters
+    '''
+
+    repeat_unit_smiles = ru_smiles
+    mol = MolFromSmiles(repeat_unit_smiles)
+    # p_stereos is a list of StereoInfo objects
+    p_stereos = FindPotentialStereo(mol)
+    return len(p_stereos)
+
+
+def _get_conformers(mol):
+    """
+        A function to generate the conformeres for a molecule to work in 3d space
+
+        Parameters:
+            mol (mol): from rdkit, a molecule
+
+        Returns:
+            m3d
+    """
+
+    # generate conformers for molecule to work in 3d space
+    m3d=Chem.AddHs(mol)
+    AllChem.EmbedMolecule(m3d)
+    AllChem.MMFFOptimizeMolecule(m3d)
+    return m3d
