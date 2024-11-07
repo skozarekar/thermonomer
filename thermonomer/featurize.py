@@ -20,7 +20,7 @@ from rdkit.ML.Descriptors import MoleculeDescriptors
 from rdkit.Chem.rdmolops import GetShortestPath, FindPotentialStereo
 from rdkit.Chem import rdChemReactions
 from rdkit.Chem import Descriptors, MolFromSmiles, GetDistanceMatrix, FindMolChiralCenters
-from rdkit.Chem.rdMolDescriptors import CalcRadiusOfGyration, CalcSpherocityIndex, DoubleCubicLatticeVolume, CalcNumBridgeheadAtoms
+from rdkit.Chem.rdMolDescriptors import CalcRadiusOfGyration, CalcSpherocityIndex, CalcNumBridgeheadAtoms
 
 
 # my imports
@@ -186,11 +186,10 @@ def steric_features(monomer_SMILES, category):
         chiral_centers = _get_num_chiral_centers(monomer_SMILES)
         rad_gyration = _get_radius_of_gyration(monomer_SMILES)
         spherocity = _get_spherocity(monomer_SMILES)
-        vdw_vol, vol = _get_volume(monomer_SMILES)
         bridgehead = _get_num_bridgehead_atoms(monomer_SMILES)
         stereocenters = _get_num_stereocenters(monomer_SMILES, category, RU_smiles)
 
-        return [backbone_len, ratio, wiener_idx, chiral_centers, rad_gyration, spherocity, vdw_vol, vol, bridgehead, stereocenters]
+        return [backbone_len, ratio, wiener_idx, chiral_centers, rad_gyration, spherocity, bridgehead, stereocenters]
     except:
         raise Exception("Issue with backbone length and side chain ratio calculation (or Hunter's features but too many to list).")
     
@@ -407,36 +406,6 @@ def _get_spherocity(monomer_smiles):
     except:
         print(f"Could not get spherocity of {monomer_smiles}")
         return np.nan
-
-def _get_volume(monomer_smiles):
-    '''
-        A function that uses rdkit to find the Van der Waals volume and total volume of a molecule 
-
-        Parameters:
-            monomer_smiles(str): the canonical smiles string of the monomer
-
-        Output:
-            (dictionary) contains the volumes with keys having prefix STERIC_
-    '''
-
-    try: 
-        output = {}
-        mol= MolFromSmiles(monomer_smiles)
-        
-        # generate conformers for molecule to work in 3d space
-        m3d=_get_conformers(mol)
-
-        dcl_id = DoubleCubicLatticeVolume(m3d)
-
-        # Get the van der Waals Volume of the molecule 
-        # output["STERIC_vdwVolume"] = dcl_id.GetVDWVolume()
-        # output["STERIC_totalVolume"] = dcl_id.GetVolume()
-
-        return dcl_id.GetVDWVolume(), dcl_id.GetVolume()
-
-    except:
-        print(f"unable to get volume/vdw volume for {monomer_smiles}")
-        return np.nan, np.nan
 
 def _get_num_bridgehead_atoms(monomer_smiles):
     '''
