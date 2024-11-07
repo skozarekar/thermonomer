@@ -10,9 +10,11 @@ from openbabel import pybel
 from openbabel._openbabel import OBChargeModel_FindType
 
 from rdkit import Chem
-from rdkit.Chem import AllChem, Period
+from rdkit.Chem import AllChem, rdFingerprintGenerator
 from rdkit.Chem import Descriptors, MolFromSmiles
-from rdkit.Chem.AllChem import GetMorganFingerprintAsBitVect
+
+mfpgen = rdFingerprintGenerator.GetMorganGenerator(radius=2,fpSize=1024)
+
 from rdkit.DataStructs import TanimotoSimilarity
 from rdkit.ML.Descriptors import MoleculeDescriptors
 from rdkit.Chem.rdmolops import GetShortestPath, FindPotentialStereo
@@ -47,8 +49,9 @@ def calculate_tanimoto_similarity(smiles1, smiles2):
     mol2 = MolFromSmiles(smiles2)
 
     if mol1 is not None and mol2 is not None:
-        fp1 = AllChem.GetMorganFingerprintAsBitVect(mol1, 2, nBits=1024)
-        fp2 = AllChem.GetMorganFingerprintAsBitVect(mol2, 2, nBits=1024)
+        fp1 = mfpgen.GetFingerprint(mol1)
+        fp2 = mfpgen.GetFingerprint(mol2)
+
         return AllChem.DataStructs.TanimotoSimilarity(fp1, fp2)
     else:
         return 0.0
@@ -88,8 +91,8 @@ def tanimoto_monomer_solvent_similarity(monomer_state, monomer_SMILES, solvent_S
             raise Exception("No solvent exists for ss state.")
 
         # Calculate fingerprints
-        fp1 = GetMorganFingerprintAsBitVect(MolFromSmiles(monomer_SMILES), 3, nBits=2048)
-        fp2 = GetMorganFingerprintAsBitVect(MolFromSmiles(solvent_SMILES), 3, nBits=2048)
+        fp1 = mfpgen.GetFingerprint(MolFromSmiles(monomer_SMILES))
+        fp2 = mfpgen.GetFingerprint(MolFromSmiles(solvent_SMILES))
 
         score = round(TanimotoSimilarity(fp1, fp2), 3)
 
@@ -183,11 +186,11 @@ def steric_features(monomer_SMILES, category):
         chiral_centers = _get_num_chiral_centers(monomer_SMILES)
         rad_gyration = _get_radius_of_gyration(monomer_SMILES)
         spherocity = _get_spherocity(monomer_SMILES)
-        vol = _get_volume(monomer_SMILES)
+        vdw_vol, vol = _get_volume(monomer_SMILES)
         bridgehead = _get_num_bridgehead_atoms(monomer_SMILES)
         stereocenters = _get_num_stereocenters(monomer_SMILES, category, RU_smiles)
 
-        return [backbone_len, ratio, wiener_idx, chiral_centers, rad_gyration, spherocity, vol, bridgehead, stereocenters]
+        return [backbone_len, ratio, wiener_idx, chiral_centers, rad_gyration, spherocity, vdw_vol, vol, bridgehead, stereocenters]
     except:
         raise Exception("Issue with backbone length and side chain ratio calculation (or Hunter's features but too many to list).")
     
@@ -426,14 +429,14 @@ def _get_volume(monomer_smiles):
         dcl_id = DoubleCubicLatticeVolume(m3d)
 
         # Get the van der Waals Volume of the molecule 
-        output["STERIC_vdwVolume"] = dcl_id.GetVDWVolume()
-        output["STERIC_totalVolume"] = dcl_id.GetVolume()
+        # output["STERIC_vdwVolume"] = dcl_id.GetVDWVolume()
+        # output["STERIC_totalVolume"] = dcl_id.GetVolume()
 
-        return output
+        return dcl_id.GetVDWVolume(), dcl_id.GetVolume()
 
     except:
         print(f"unable to get volume/vdw volume for {monomer_smiles}")
-        return np.nan
+        return np.nan, np.nan
 
 def _get_num_bridgehead_atoms(monomer_smiles):
     '''
