@@ -405,13 +405,19 @@ def _get_spherocity(monomer_smiles):
     '''
 
     try:
-        mol = MolFromSmiles(monomer_smiles)
+        # Deal with stochastic generation
+        vals = []
+        for i in range(100):
+            mol = MolFromSmiles(monomer_smiles)
 
-        # generate conformers for molecule to work in 3d space
-        m3d=_get_conformers(mol)
+            # generate conformers for molecule to work in 3d space
+            m3d=_get_conformers(mol)
 
-        sphere_id = CalcSpherocityIndex(m3d)
-        return sphere_id
+            sphere_id = CalcSpherocityIndex(m3d)
+            vals.append(sphere_id)
+        
+        return round(np.average(vals, 2), 2)
+    
     except:
         print(f"Could not get spherocity of {monomer_smiles}")
         return np.nan
