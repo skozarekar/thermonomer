@@ -103,20 +103,29 @@ def tanimoto_monomer_solvent_similarity(monomer_state, monomer_SMILES, solvent_S
         return -1
 
 def dipole_moments(monomer_SMILES, dipole_calc_method):
-    # Create molecule file
-    os.system('obabel -:"' + str(monomer_SMILES) + '" -i smiles -O temp.sdf --gen3d')
+    dipole_calcs = []
 
-    for mol in pybel.readfile("sdf", "temp.sdf"):
-        # Calculate dipole with given method
-        cm = OBChargeModel_FindType(dipole_calc_method)
-        cm.ComputeCharges(mol.OBMol)
-        dipole = cm.GetDipoleMoment(mol.OBMol)
+    # Get an average since 3D generation is stochastic
+    for i in range(100):
+        # Generate deterministic 3D structure with RDKit
+        mol = Chem.MolFromSmiles(monomer_SMILES)
+        mol = Chem.AddHs(mol)
+        AllChem.EmbedMolecule(mol)
 
-        # Delete file
-        os.system('rm temp.sdf')
+        # Save as SDF for compatibility with Pybel
+        sdf_filename = "temp.sdf"
+        writer = Chem.SDWriter(sdf_filename)
+        writer.write(mol)
+        writer.close()
 
-        # Return scalar
-        return round(math.sqrt(dipole.GetX() ** 2 + dipole.GetY() ** 2 + dipole.GetZ() ** 2), 2)
+        for mol in pybel.readfile("sdf", sdf_filename):
+            cm = OBChargeModel_FindType(dipole_calc_method)
+            cm.ComputeCharges(mol.OBMol)
+            dipole = cm.GetDipoleMoment(mol.OBMol)
+            os.remove(sdf_filename)
+            dipole_calcs.append(math.sqrt(dipole.GetX() ** 2 + dipole.GetY() ** 2 + dipole.GetZ() ** 2))
+
+    return round(np.average(dipole_calcs), 2)
 
 def rdkit_2D_features(monomer_SMILES):
     '''
