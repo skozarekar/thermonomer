@@ -1,0 +1,8 @@
+_polymerization_dict = {
+    "ROP": _ROP_all,
+    "ROMP": _ROMP,
+    "vinyl/acrylic": _vinyl, done
+    "aldehyde": _aldehyde, done
+    "cyclic": _cyclic, done
+    "cationic": _cationic
+}
