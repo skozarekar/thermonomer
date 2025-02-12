@@ -1,0 +1,21 @@
+Vinyl:
+initiation = rdChemReactions.ReactionFromSmarts(
+    "[C:1]=[C:2].[Po]-[At]>>[Po]-[C:1]-[C:2]-[At]"
+)
+
+
+
+
+
+
+
+All:
+prop = rdChemReactions.ReactionFromSmarts(
+    "[*:4]-[Po:1].[At:2]-[*:3]>>[*:4]-[*:3]"
+)
+replaceAt = rdChemReactions.ReactionFromSmarts(
+    "[At:1]>>[C:1]"
+)
+replacePo = rdChemReactions.ReactionFromSmarts(
+    "[Po:1]>>[C:1]"
+)
