@@ -8,6 +8,11 @@ initiation = rdChemReactions.ReactionFromSmarts(
     "[O:1]=[C:2].[Po]-[At]>>[Po]-[O:1]-[C:2]-[At]"
 )
 
+Cyclic: must have a cycle with non aromatic carbons in the cycle
+initiation = rdChemReactions.ReactionFromSmarts(
+    "([CH2:1]-[CH2:2]).[Po:3]-[At:4]>>([CH2:1][Po:3].[CH2:2][At:4])"
+)
+
 
 
 All:
