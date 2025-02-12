@@ -42,11 +42,10 @@ def get_polymer_list(degree_of_polymerization, monomer_SMILES, polymerization_ty
     return polymer_list, [Chem.MolToSmiles(mol) for mol in polymer_list]
 
 _initiation_dictionary = {
-    # "ROP": _ROP_all,
-    # "ROMP": _ROMP,
+    "ROP": rdChemReactions.ReactionFromSmarts("([O,N,S:1]@[CX3:2]=[O,S:5]).[Po:3]-[At:4]>>([O,N,S:1][Po:3].[C:2](=[O,S:5])[At:4])"),
+    "ROMP": rdChemReactions.ReactionFromSmarts("([C:1]=[C:2]).[Po:3]-[At:4]>>([:1][Po:3].[:2][At:4])"),
     "vinyl/acrylic": rdChemReactions.ReactionFromSmarts("[C:1]=[C:2].[Po]-[At]>>[Po]-[C:1]-[C:2]-[At]"),
     "aldehyde": rdChemReactions.ReactionFromSmarts("[O:1]=[C:2].[Po]-[At]>>[Po]-[O:1]-[C:2]-[At]"),
-    # these two are the same
     "cyclic": rdChemReactions.ReactionFromSmarts("([*:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])"),
     "cationic": rdChemReactions.ReactionFromSmarts("([*:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])")
 }
