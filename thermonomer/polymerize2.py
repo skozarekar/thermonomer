@@ -6,7 +6,10 @@ from rdkit.Chem import rdChemReactions
 def get_polymer_list(degree_of_polymerization, monomer_SMILES, polymerization_type, end_group="C"):
     # Set I, P, T reactions
     initiation = _initiation_dictionary[polymerization_type]
-    propagation = rdChemReactions.ReactionFromSmarts("[*:4]-[Po:1].[At:2]-[*:3]>>[*:4]-[*:3]")
+    if polymerization_type == "ROMP":
+        propagation = rdChemReactions.ReactionFromSmarts("[*:4]-[Po:1].[At:2]-[*:3]>>[*:4]=[*:3]")
+    else:
+        propagation = rdChemReactions.ReactionFromSmarts("[*:4]-[Po:1].[At:2]-[*:3]>>[*:4]-[*:3]")
     terminationAt = rdChemReactions.ReactionFromSmarts(f"[At:1]>>[{end_group}:1]")
     terminationPo = rdChemReactions.ReactionFromSmarts(f"[Po:1]>>[{end_group}:1]")
 
@@ -20,7 +23,7 @@ def get_polymer_list(degree_of_polymerization, monomer_SMILES, polymerization_ty
     # Run polymerization reactions
     for i in range(degree_of_polymerization):
         if i == 0: # initation - create repeat unit
-            repeat_unit = initiation.RunReactants((dp0, helper))[1][0]
+            repeat_unit = initiation.RunReactants((dp0, helper))[0][0]
             polymer = repeat_unit
 
             polymer_list.append(repeat_unit) # DP = 1
@@ -43,9 +46,9 @@ def get_polymer_list(degree_of_polymerization, monomer_SMILES, polymerization_ty
 
 _initiation_dictionary = {
     "ROP": rdChemReactions.ReactionFromSmarts("([O,N,S:1]@[CX3:2]=[O,S:5]).[Po:3]-[At:4]>>([O,N,S:1][Po:3].[C:2](=[O,S:5])[At:4])"),
-    "ROMP": rdChemReactions.ReactionFromSmarts("([C:1]=[C:2]).[Po:3]-[At:4]>>([:1][Po:3].[:2][At:4])"),
-    "vinyl/acrylic": rdChemReactions.ReactionFromSmarts("[C:1]=[C:2].[Po]-[At]>>[Po]-[C:1]-[C:2]-[At]"),
-    "aldehyde": rdChemReactions.ReactionFromSmarts("[O:1]=[C:2].[Po]-[At]>>[Po]-[O:1]-[C:2]-[At]"),
+    "ROMP": rdChemReactions.ReactionFromSmarts("([C:1]=[C:2]).[Po:3]-[At:4]>>([C:1][Po:3].[C:2][At:4])"),
+    "vinyl/acrylic": rdChemReactions.ReactionFromSmarts("[C:1]=[C:2].[Po:3]-[A:4]>>[Po:3]-[C:1]-[C:2]-[At:4]"),
+    "ionic": rdChemReactions.ReactionFromSmarts("[O:1]=[C:2].[Po:3]-[At:3]>>[Po:3]-[O:1]-[C:2]-[At:4]"),
     "cyclic": rdChemReactions.ReactionFromSmarts("([*:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])"),
     "cationic": rdChemReactions.ReactionFromSmarts("([*:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])")
 }
