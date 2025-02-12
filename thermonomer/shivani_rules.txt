@@ -3,9 +3,10 @@ initiation = rdChemReactions.ReactionFromSmarts(
     "[C:1]=[C:2].[Po]-[At]>>[Po]-[C:1]-[C:2]-[At]"
 )
 
-
-
-
+Aldehyde:
+initiation = rdChemReactions.ReactionFromSmarts(
+    "[O:1]=[C:2].[Po]-[At]>>[Po]-[O:1]-[C:2]-[At]"
+)
 
 
 
