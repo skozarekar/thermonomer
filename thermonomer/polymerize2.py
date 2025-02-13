@@ -50,8 +50,8 @@ _initiation_dictionary = {
     "ROMP": rdChemReactions.ReactionFromSmarts("([C:1]=[C:2]).[Po:3]-[At:4]>>([C:1][Po:3].[C:2][At:4])"),
     "vinyl/acrylic": rdChemReactions.ReactionFromSmarts("[C:1]=[C:2].[Po:3]-[A:4]>>[Po:3]-[C:1]-[C:2]-[At:4]"),
     "ionic": rdChemReactions.ReactionFromSmarts("[O,S:1]=[C:2].[Po:3]-[At:4]>>[Po:3]-[O,S:1]-[C:2]-[At:4]"),
-    "cyclic": rdChemReactions.ReactionFromSmarts("([*:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])"),
-    "cationic": rdChemReactions.ReactionFromSmarts("([*:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])")
+    "cyclic": rdChemReactions.ReactionFromSmarts("([*X4:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])"),
+    "cationic": rdChemReactions.ReactionFromSmarts("([*X4:1]@[*:2]).[Po:3]-[At:4]>>([*:1][Po:3].[*:2][At:4])")
 }
 
 
