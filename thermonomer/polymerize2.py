@@ -8,10 +8,12 @@ def get_polymer_list(degree_of_polymerization, monomer_SMILES, polymerization_ty
     initiation = _initiation_dictionary[polymerization_type]
     if polymerization_type == "ROMP":
         propagation = rdChemReactions.ReactionFromSmarts("[*:4]-[Po:1].[At:2]-[*:3]>>[*:4]=[*:3]")
+        terminationAt = rdChemReactions.ReactionFromSmarts(f"[At:1]>>[{end_group}:1]")
+        terminationPo = rdChemReactions.ReactionFromSmarts(f"[Po:1]>>[{end_group}:1]")
     else:
         propagation = rdChemReactions.ReactionFromSmarts("[*:4]-[Po:1].[At:2]-[*:3]>>[*:4]-[*:3]")
-    terminationAt = rdChemReactions.ReactionFromSmarts(f"[At:1]>>[{end_group}:1]")
-    terminationPo = rdChemReactions.ReactionFromSmarts(f"[Po:1]>>[{end_group}:1]")
+        terminationAt = rdChemReactions.ReactionFromSmarts(f"[At:1]>>[{end_group}:1]")
+        terminationPo = rdChemReactions.ReactionFromSmarts(f"[Po:1]>>[{end_group}:1]")
 
     # Create molecules
     helper = Chem.MolFromSmiles("[Po]-[At]")
